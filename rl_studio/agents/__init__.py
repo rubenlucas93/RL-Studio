@@ -48,9 +48,9 @@ class TrainerFactory:
 
         agent = config["settings"]["agent"]
         algorithm = config["settings"]["algorithm"]
-        task = config["settings"]["task"]
-        simulator = config["settings"]["simulator"]
-        framework = config["settings"]["framework"]
+        task = config["settings"].get("task")
+        simulator = config["settings"].get("simulator")
+        framework = config["settings"].get("framework")
 
         print_messages(
             "TrainerFactory",
@@ -279,6 +279,16 @@ class TrainerFactory:
 
             return TurtlebotTrainer(config)
 
+        # =============================
+        # Pendulum - DDPG - Pytorch
+        # =============================
+        elif agent == AgentsType.PENDULUM.value:
+            if algorithm == AlgorithmsType.DDPG_TORCH.value:
+                from rl_studio.agents.pendulum.train_ddpg import (
+                    DDPGPendulumTrainer as PendulumTrainer,
+                )
+            return PendulumTrainer(config)
+
         else:
             raise NoValidTrainingType(agent)
 
@@ -288,9 +298,9 @@ class InferencerFactory:
 
         agent = config["settings"]["agent"]
         algorithm = config["settings"]["algorithm"]
-        task = config["settings"]["task"]
-        simulator = config["settings"]["simulator"]
-        framework = config["settings"]["framework"]
+        task = config["settings"].get("task")
+        simulator = config["settings"].get("simulator")
+        framework = config["settings"].get("framework")
         print_messages(
             "InferenceExecutorFactory",
             task=task,
@@ -412,18 +422,11 @@ class InferencerFactory:
                 from rl_studio.agents.cartpole.inference_dqn import (
                     DQNCartpoleInferencer as CartpoleInferencer,
                 )
-            elif algorithm == AlgorithmsType.QLEARN.value:
+            else:
                 from rl_studio.agents.cartpole.inference_qlearn import (
                     QLearnCartpoleInferencer as CartpoleInferencer,
                 )
-            elif algorithm == AlgorithmsType.PPO.value:
-                from rl_studio.agents.cartpole.inference_ppo import (
-                    PPOCartpoleInferencer as CartpoleInferencer,
-                )
-            elif algorithm == AlgorithmsType.PROGRAMMATIC.value:
-                from rl_studio.agents.cartpole.inference_no_rl import (
-                    NoRLCartpoleInferencer as CartpoleInferencer,
-                )
+
             return CartpoleInferencer(config)
 
         # =============================
@@ -436,5 +439,14 @@ class InferencerFactory:
 
             return MountainCarInferencer(config)
 
+        # =============================
+        # Pendulum - DDPG - Pytorch
+        # =============================
+        elif agent == AgentsType.PENDULUM.value:
+            from rl_studio.agents.pendulum.inference_ddpg import (
+                DDPGPendulumInferencer as PendulumInferencer,
+            )
+
+            return PendulumInferencer(config)
         else:
             raise NoValidTrainingType(agent)
