@@ -26,10 +26,10 @@ class LoadAlgorithmParams:
             self.min_replay_memory_size = config["algorithm"]["dqn"][
                 "min_replay_memory_size"
             ]
+            self.fit = config["algorithm"]["dqn"]["fit"]
             self.minibatch_size = config["algorithm"]["dqn"]["minibatch_size"]
             self.update_target_every = config["algorithm"]["dqn"]["update_target_every"]
             self.memory_fraction = config["algorithm"]["dqn"]["memory_fraction"]
-            self.buffer_capacity = config["algorithm"]["dqn"]["buffer_capacity"]
             self.batch_size = config["algorithm"]["dqn"]["batch_size"]
 
         elif config["settings"]["algorithm"] == "qlearn":
@@ -124,6 +124,8 @@ class LoadGlobalParams:
         self.metrics_graphics_dir = f"{config['settings']['metrics_dir']}/{config['settings']['mode']}/{config['settings']['task']}_{config['settings']['algorithm']}_{config['settings']['agent']}_{config['settings']['framework']}/graphics"
         self.recorders_carla_dir = f"{config['settings']['recorder_carla_dir']}/{config['settings']['mode']}/{config['settings']['task']}_{config['settings']['algorithm']}_{config['settings']['agent']}_{config['settings']['framework']}"
         self.training_time = config["settings"]["training_time"]
+        self.debug_stats = config["settings"]["debug_stats"]
+        self.show_monitoring = config["settings"]["show_monitoring"]
         ####### States
         self.states = config["settings"]["states"]
         self.states_set = config["states"][self.states]
@@ -272,12 +274,8 @@ class LoadEnvVariablesDDPGGazebo:
         ]
         # Training/inference
         self.environment["mode"] = config["settings"]["mode"]
-        self.environment["retrain_ddpg_tf_actor_model_name"] = config["retraining"][
-            "ddpg"
-        ]["retrain_ddpg_tf_actor_model_name"]
-        self.environment["retrain_ddpg_tf_critic_model_name"] = config["retraining"][
-            "ddpg"
-        ]["retrain_ddpg_tf_critic_model_name"]
+        self.environment["retrain_ddpg_tf_actor_model_name"] = f"{config['retraining']['ddpg']['retrain_ddpg_tf_model_name']}/ACTOR"
+        self.environment["retrain_ddpg_tf_critic_model_name"] = f"{config['retraining']['ddpg']['retrain_ddpg_tf_model_name']}/CRITIC"
         self.environment["inference_ddpg_tf_actor_model_name"] = config["inference"][
             "ddpg"
         ]["inference_ddpg_tf_actor_model_name"]

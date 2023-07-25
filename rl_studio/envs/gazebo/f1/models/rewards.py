@@ -87,6 +87,77 @@ class F1GazeboRewards:
 
         return reward, done
 
+    def rewards_all_points_followline_velocity_center(self, v, w, state, rewards):
+        """
+        original for Following Line
+        """
+
+        # we reward proximity to the line
+        p_reward1, done1 = self.reward_proximity(state[4], rewards)
+        p_reward2, done2 = self.reward_proximity(state[3], rewards)
+        p_reward3, done3 = self.reward_proximity(state[2], rewards)
+        p_reward4, done4 = self.reward_proximity(state[1], rewards)
+        p_reward5, done5 = self.reward_proximity(state[0], rewards)
+        p_reward = p_reward1 + 0.8*p_reward2 + 0.6*p_reward3 + 0.4*p_reward4 + 0.2*p_reward5
+        done = done1 and done2 and done3 and done4 and done5
+
+        # we reward higher velocities as long as the car keeps stick to the line
+        v_reward = abs(v) * p_reward
+
+        return p_reward + v_reward, done
+    def rewards_followline_velocity_center(self, v, state, range_v):
+        """
+        original for Following Line
+        """
+        # we reward proximity to the line
+        p_reward1, done1 = self.reward_proximity(state[-1])
+        p_reward2, done2 = self.reward_proximity(state[4])
+        p_reward = (p_reward1 + p_reward2)/2
+        done = done1 and done2
+
+        # we reward higher velocities as long as the car keeps stick to the line
+        # v_reward = self.normalize_range(v, range_v[0], range_v[1])
+        # v_reward = self.sigmoid_function(range_v[0], range_v[1], v, 5)
+        v_reward = self.linear_function(-0.07, 0.07, v)
+        #reward shaping to ease training with speed:
+        if abs(state[-1]) > 0.5 and abs(state[4]) > 0.5:
+            beta = 1
+        else:
+        # elif abs(state[4]) <= 0.3 and abs(state[3]) <= 0.3:
+        #     beta = 0.7
+        # elif abs(state[4]) <= 0.5 and abs(state[3]) <= 0.5:
+        #     beta = 0.8
+        # else:
+        #     beta = 0.9
+        # if abs(state[4]) <= 0.15:
+        #     beta = 0.7
+        # elif abs(state[4]) <= 0.4:
+        #     beta = 0.8
+        # else:
+        #     beta = 0.9
+            beta = 0.8
+        reward = (beta * p_reward) + ((1 - beta) * (p_reward * v_reward))
+        return reward, done
+
+    def normalize_range(self, num, a, b):
+        return (num - a) / (b - a)
+
+    def reward_proximity(self, state):
+        # sigmoid_pos = self.sigmoid_function(0, 1, state)
+        if abs(state) > 0.7:
+            return 0, True
+        else:
+            # return 1-self.sigmoid_function(0, 1, abs(state), 5), False
+            return self.linear_function(1, -1.4, abs(state)), False
+
+    def sigmoid_function(self, start, end, x, slope=10):
+        slope = slope / (end - start)
+        sigmoid = 1 / (1 + np.exp(-slope * (x - ((start + end) / 2))))
+        return sigmoid
+
+    def linear_function(self, cross_x, slope, x):
+        return cross_x + (slope * x)
+
     def rewards_followline_v_w_centerline(
         self, vel_cmd, center, rewards, beta_1, beta_0
     ):

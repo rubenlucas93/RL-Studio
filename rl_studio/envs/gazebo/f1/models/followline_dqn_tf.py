@@ -32,7 +32,7 @@ class FollowLineDQNF1GazeboTF(F1Env):
         if self.state_space == "image":
             return Reset.reset_f1_state_image(self)
         else:
-            return Reset.reset_f1_state_sp(self)
+            return Reset.reset_f1_state_sp_line(self)
 
     def step(self, action, step):
         from rl_studio.envs.gazebo.f1.models.step import (

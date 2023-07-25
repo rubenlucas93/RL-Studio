@@ -60,6 +60,11 @@ class ModifiedTensorBoard(TensorBoard):
     def update_stats(self, **stats):
         self._write_logs(stats, self.step)
 
+    def update_actions(self, actions, index):
+        with self.writer.as_default():
+            tf.summary.histogram("actions_v", actions[0], step=index)
+            tf.summary.histogram("actions_w", actions[1], step=index)
+            self.writer.flush()
 
 class OUActionNoise:
     def __init__(self, mean, std_deviation, theta=0.15, dt=1e-2, x_initial=None):
@@ -165,7 +170,7 @@ class Buffer:
         with tf.GradientTape() as tape:
             target_actions = actor_critic.target_actor(next_state_batch, training=True)
             y = reward_batch + gamma * actor_critic.target_critic(
-                [next_state_batch, target_actions], training=True
+                [next_state_batch, target_actions[0], target_actions[1]], training=True
             )
 
             if self.action_space == "continuous":
@@ -192,7 +197,7 @@ class Buffer:
         with tf.GradientTape() as tape:
             actions = actor_critic.actor_model(state_batch, training=True)
             critic_value = actor_critic.critic_model(
-                [state_batch, actions], training=True
+                [state_batch, actions[0], actions[1]], training=True
             )
             # Used `-value` as we want to maximize the value given
             # by the critic for our actions
@@ -204,6 +209,7 @@ class Buffer:
         actor_critic.actor_optimizer.apply_gradients(
             zip(actor_grad, actor_critic.actor_model.trainable_variables)
         )
+        return actor_loss, critic_loss
 
     # We compute the loss and update parameters
     def learn(self, actor_critic, gamma):
@@ -251,7 +257,7 @@ class Buffer:
             )
 
         else:
-            self.update(
+            return self.update(
                 actor_critic,
                 gamma,
                 state_batch,
@@ -288,9 +294,9 @@ class DDPGAgent:
         self.actor_optimizer = tf.keras.optimizers.Adam(config["actor_lr"])
 
         # Custom tensorboard object
-        self.tensorboard = ModifiedTensorBoard(
-            log_dir=f"{outdir}/{self.MODEL_NAME}-{time.strftime('%Y%m%d-%H%M%S')}"
-        )
+        # self.tensorboard = ModifiedTensorBoard(
+        #     log_dir=f"{outdir}/{self.MODEL_NAME}-{time.strftime('%Y%m%d-%H%M%S')}"
+        # )
 
         # Used to count when to update target network with main network's weights
         self.target_update_counter = 0
@@ -478,8 +484,9 @@ class DDPGAgent:
     def policy_continuous_actions(self, state, noise_object):
         sampled_actions = tf.squeeze(self.actor_model(state))
         noise = noise_object()
+        # print(sampled_actions)
         # Adding noise to action
-        sampled_actions = sampled_actions.numpy() + noise
+        sampled_actions = sampled_actions.numpy() * noise
         # we can discretized the actions values with round(,0)
         legal_action_v = round(
             np.clip(sampled_actions[0], self.V_LOWER_BOUND, self.V_UPPER_BOUND), 1
@@ -613,13 +620,15 @@ class DDPGAgent:
         return model
 
     def get_actor_model_sp_continuous_actions(self):
-        # inputShape = (96, 128, 3)
-
         inputs = Input(shape=self.OBSERVATION_SPACE_VALUES)
-        v_branch = self.build_branch(inputs, "v_output")
-        w_branch = self.build_branch(inputs, "w_output")
+        # last_init = tf.random_uniform_initializer(minval=-1, maxval=0.01)
+        hidden_init = tf.keras.initializers.GlorotUniform()
+        shared_layer = Dense(300, activation="relu", kernel_initializer=hidden_init)
 
-        v_branch = abs(v_branch) * self.V_UPPER_BOUND
+        v_branch = self.build_branch(inputs, "v_output", shared_layer)
+        w_branch = self.build_branch(inputs, "w_output", shared_layer)
+
+        v_branch = ((v_branch + 1) / 2) * (self.V_UPPER_BOUND - self.V_LOWER_BOUND) + self.V_LOWER_BOUND
         w_branch = w_branch * self.W_LEFT_BOUND
 
         # create the model using our input (the batch of images) and
@@ -632,11 +641,14 @@ class DDPGAgent:
         # return the constructed network architecture
         return model
 
-    def build_branch(self, inputs, action_name):
-        last_init = tf.random_uniform_initializer(minval=-0.01, maxval=0.01)
-        # inputs = layers.Input(shape=(self.OBSERVATION_SPACE_VALUES))
-        x = Dense(128, activation="relu")(inputs)  # 8, 16, 32 neurons
-        x = Dense(128, activation="relu")(x)  # 8, 16, 32 neurons
+    def build_branch(self, inputs, action_name, shared_layer):
+        # last_init = tf.random_uniform_initializer(minval=-1, maxval=1)
+        hidden_init = tf.keras.initializers.GlorotUniform()
+        last_init = tf.keras.initializers.HeUniform()
+
+        x = shared_layer(inputs)
+        x = Dense(300, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(300, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
 
         x = Dense(1, activation="tanh", kernel_initializer=last_init)(x)
         x = Activation("tanh", name=action_name)(x)

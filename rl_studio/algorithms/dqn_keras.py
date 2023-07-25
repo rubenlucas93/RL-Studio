@@ -20,6 +20,8 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.optimizers import Adam, RMSprop
+from keras import backend as K
+import gc
 
 import rl_studio.algorithms.memory as memory
 
@@ -65,6 +67,11 @@ class ModifiedTensorBoard(TensorBoard):
                 self.step += 1
                 self.writer.flush()
 
+    def update_histogram(self, name, data):
+        with self.writer.as_default():
+            tf.summary.histogram(name, data)
+            self.writer.flush()
+
 
 class DQN:
     def __init__(
@@ -90,18 +97,12 @@ class DQN:
         )  # Terminal states (end of episodes)
         self.MODEL_NAME = algorithm.model_name
         self.DISCOUNT = algorithm.gamma  # gamma: min 0 - max 1
-
+        self.fit = algorithm.fit
         self.state_space = global_params.states
 
         # load pretrained model for continuing training (not inference)
         if environment["mode"] == "retraining":
-            print("---------------------- entry load retrained model")
-            print(f"{outdir}/{environment['retrain_dqn_tf_model_name']}")
-            # load pretrained actor and critic models
-            dqn_retrained_model = f"{outdir}/{environment['retrain_dqn_tf_model_name']}"
-            self.model = load_model(dqn_retrained_model, compile=True)
-            self.target_model = load_model(dqn_retrained_model, compile=True)
-
+            self.load_model(f"{outdir}/{environment['retrain_dqn_tf_model_name']}")
         else:
             # main model
             # # gets trained every step
@@ -127,6 +128,13 @@ class DQN:
         # Used to count when to update target network with main network's weights
         self.target_update_counter = 0
 
+    def load_model(self, model_file):
+        print("---------------------- entry load retrained model")
+        # load pretrained actor and critic models
+        dqn_retrained_model = model_file
+        self.model = load_model(dqn_retrained_model, compile=True)
+        self.target_model = load_model(dqn_retrained_model, compile=True)
+
     def load_inference_model(self, models_dir, config):
         """ """
         path_inference_model = (
@@ -146,7 +154,7 @@ class DQN:
         loss = "mse"
         optimizing = 0.005
 
-        inputs = layers.Input(shape=(self.STATE_SIZE))
+        inputs = layers.Input(shape=(self.STATE_SIZE,))
         out = layers.Dense(neurons1, activation="relu")(inputs)
         out = layers.Dense(neurons2, activation="relu")(out)
         outputs = layers.Dense(self.ACTION_SIZE, activation="linear")(out)
@@ -192,19 +200,19 @@ class DQN:
         last_init = tf.random_uniform_initializer(minval=-0.01, maxval=0.01)
         inputs = Input(shape=self.STATE_SIZE)
         x = Rescaling(1.0 / 255)(inputs)
-        x = Conv2D(32, (3, 3), padding="same")(x)
+        x = Conv2D(16, (3, 3), padding="same")(x)
         # x = Conv2D(32, (3, 3), padding="same")(inputs)
         x = Activation("relu")(x)
         x = MaxPooling2D(pool_size=(3, 3), padding="same")(x)
         x = Dropout(0.25)(x)
 
-        x = Conv2D(64, (3, 3), padding="same")(x)
+        x = Conv2D(32, (3, 3), padding="same")(x)
         x = Activation("relu")(x)
         x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
         x = Dropout(0.25)(x)
 
         x = Flatten()(x)
-        x = Dense(64)(x)
+        x = Dense(32)(x)
 
         x = Dense(self.ACTION_SIZE, activation="tanh", kernel_initializer=last_init)(x)
         # x = Activation("tanh", name=action_name)(x)
@@ -223,11 +231,12 @@ class DQN:
                 0
             ]
         else:
-            return self.model.predict(state)[0]
+            return self.model(np.array(state).reshape(1, self.STATE_SIZE))[0]
 
     # Trains main network every step during episode
+    # from memory_profiler import profile
+    # @profile
     def train(self, terminal_state, step):
-
         # Start training only if certain number of samples is already saved
         if len(self.replay_memory) < self.MIN_REPLAY_MEMORY_SIZE:
             return
@@ -235,13 +244,11 @@ class DQN:
         # Get a minibatch of random samples from memory replay table
         minibatch = random.sample(self.replay_memory, self.MINIBATCH_SIZE)
         # Get current states from minibatch, then query NN model for Q values
-        current_states = np.array([transition[0] for transition in minibatch]) / 255
-        current_qs_list = self.model.predict(current_states)
+        current_qs_list = np.array(self.model(np.array([transition[0] for transition in minibatch])))
 
         # Get future states from minibatch, then query NN model for Q values
         # When using target network, query it, otherwise main network should be queried
-        new_current_states = np.array([transition[3] for transition in minibatch]) / 255
-        future_qs_list = self.target_model.predict(new_current_states)
+        future_qs_list = np.array(self.target_model(np.array([transition[3] for transition in minibatch])))
 
         X = []  # thats the image input
         y = []  # thats the label or action to take
@@ -271,15 +278,36 @@ class DQN:
             X.append(current_state)  # image
             y.append(current_qs)  # q_value which is Action to take
 
-        # Fit on all samples as one batch, log only on terminal state
-        self.model.fit(
-            np.array(X) / 255,
-            np.array(y),
-            batch_size=self.MINIBATCH_SIZE,
-            verbose=0,
-            shuffle=False,
-            callbacks=[self.tensorboard] if terminal_state else None,
-        )
+
+        # # Fit on all samples as one batch, log only on terminal state
+        if self.fit:
+            self.model.fit(
+                np.array(X),
+                np.array(y),
+                batch_size=self.MINIBATCH_SIZE,
+                verbose=0,
+                shuffle=True,
+                callbacks=[self.tensorboard] if terminal_state else None,
+            )
+        else:
+
+            # # Shuffle indices if necessary
+            # indices = np.random.permutation(self.MINIBATCH_SIZE)
+            #
+            # # Iterate over batches and train on each batch
+            # for batch_index in range(2):
+            #     batch_start = batch_index * self.MINIBATCH_SIZE//2
+            #     batch_end = (batch_index + 1) * self.MINIBATCH_SIZE//2
+            #     batch_indices = indices[batch_start:batch_end]
+            #     X_batch = X[batch_indices]
+            #     y_batch = y[batch_indices]
+
+            # Train on batch
+            loss = self.model.train_on_batch(np.array(X), np.array(y))
+            self.tensorboard.update_stats(loss=loss)
+        # K.clear_session()
+        # gc.collect()
+        # tf.keras.backend.clear_session()
 
         # Update target network counter every episode
         if terminal_state:

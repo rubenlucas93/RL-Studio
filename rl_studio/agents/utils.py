@@ -4,6 +4,7 @@ import os
 import pickle
 from pprint import pformat
 import time
+from markdownTable import markdownTable
 
 import cv2
 import numpy as np
@@ -89,10 +90,25 @@ def print_dictionary(dic):
     # pp.pprint(dic)
     print(highlight(pformat(dic), PythonLexer(), Terminal256Formatter()), end="")
 
+def params_to_markdown_list(obj):
+    md_list = []
+    for attr in dir(obj):
+        if not attr.startswith("__"):
+            value = getattr(obj, attr)
+            md_list.append({"parameter": attr, "value": value})
+    return md_list
 
+def save_metadata(algorithm, params, dir):
+    metadata = open(dir, "a")
+    metadata.write("AGENT PARAMETERS\n")
+    metadata.write("\n```\n\nENVIRONMENT PARAMETERS\n")
+    metadata.write(markdownTable(params_to_markdown_list(algorithm)).setParams(row_sep='always').getMarkdown())
+    metadata.write("\n```\n\nALGORITHM PARAMETERS\n")
+    metadata.write(markdownTable(params_to_markdown_list(params)).setParams(row_sep='always').getMarkdown())
+    metadata.close()
 def render_params(**kwargs):
     font = cv2.FONT_HERSHEY_SIMPLEX
-    canvas = np.zeros((400, 400, 3), dtype="uint8")
+    canvas = np.zeros((400, 1200, 3), dtype="uint8")
     # blue = (255, 0, 0)
     # green = (0, 255, 0)
     # red = (0, 0, 255)
@@ -122,16 +138,18 @@ def save_dataframe_episodes(environment, outdir, aggr_ep_rewards, actions_reward
     """
     os.makedirs(f"{outdir}", exist_ok=True)
 
-    file_csv = f"{outdir}/{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.csv"
-    file_excel = f"{outdir}/{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.xlsx"
+    # file_csv = f"{outdir}/{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.csv"
+    # file_excel = f"{outdir}/{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.xlsx"
+    #
+    # df = pd.DataFrame(aggr_ep_rewards)
+    # df.to_csv(file_csv, mode="a", index=False, header=None)
+    # df.to_excel(file_excel)
 
-    df = pd.DataFrame(aggr_ep_rewards)
-    df.to_csv(file_csv, mode="a", index=False, header=None)
-    df.to_excel(file_excel)
-
-    if actions_rewards is not None:
-        file_npy = f"{outdir}/{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.npy"
-        np.save(file_npy, actions_rewards)
+    if aggr_ep_rewards is not None:
+        file_name = f"{time.strftime('%Y%m%d-%H%M%S')}_Circuit-{environment['circuit_name']}_States-{environment['states']}_Actions-{environment['action_space']}_Rewards-{environment['reward_function']}.npy"
+        file_npy = f"{outdir}/{file_name}"
+        np.save(file_npy, aggr_ep_rewards)
+        return file_name
 
 
 def save_best_episode(

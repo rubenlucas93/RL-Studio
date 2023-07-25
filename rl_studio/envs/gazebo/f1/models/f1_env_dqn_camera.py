@@ -332,31 +332,6 @@ class GazeboF1CameraEnvDQN(F1Env):
 
         return coords
 
-    def processed_image(self, img):
-        """
-        Conver img to HSV. Get the image processed. Get 3 lines from the image.
-
-        :parameters: input image 640x480
-        :return: x, y, z: 3 coordinates
-        """
-
-        img_proc = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        line_pre_proc = cv2.inRange(img_proc, (0, 30, 30), (0, 255, 200))
-
-        # gray = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(line_pre_proc, 240, 255, cv2.THRESH_BINARY)
-
-        line_1 = mask[x_row[0], :]
-        line_2 = mask[x_row[1], :]
-        line_3 = mask[x_row[2], :]
-
-        central_1 = self.get_center(line_1)
-        central_2 = self.get_center(line_2)
-        central_3 = self.get_center(line_3)
-
-        # print(central_1, central_2, central_3)
-
-        return central_1, central_2, central_3
 
     def callback(self, data):
 
@@ -650,7 +625,7 @@ class DQNF1FollowLineEnvGazebo(F1Env):
             # print(f"No lines detected in the image")
             return 0
 
-    def processed_image(self, img):
+    def processed_image(self, img, show_monitoring=True):
         """
         Convert img to HSV. Get the image processed. Get 3 lines from the image.
 
@@ -666,7 +641,7 @@ class DQNF1FollowLineEnvGazebo(F1Env):
         lines = [mask[self.x_row[idx], :] for idx, x in enumerate(self.x_row)]
         centrals = list(map(self.get_center, lines))
 
-        if self.telemetry_mask:
+        if self.telemetry_mask and show_monitoring:
             mask_points = np.zeros((self.height, self.width), dtype=np.uint8)
             for idx, point in enumerate(centrals):
                 cv2.line(

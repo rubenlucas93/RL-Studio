@@ -5,7 +5,7 @@ from rl_studio.envs.gazebo.f1.models.utils import F1GazeboUtils
 
 
 class F1GazeboSimplifiedPerception:
-    def processed_image(self, img, height, width, x_row, center_image):
+    def processed_image(self, img, height, width, x_row, center_image, show_monitoring=True):
         """
         In FollowLine tasks, gets the centers of central line
         In Followlane Tasks, gets the center of lane
@@ -13,7 +13,7 @@ class F1GazeboSimplifiedPerception:
         :parameters: input image 640x480
         :return:
             centrals: lists with distance to center in pixels
-            cntrals_normalized: lists with distance in range [0,1] for calculating rewards
+            centrals_normalized: lists with distance in range [0,1] for calculating rewards
         """
         image_middle_line = height // 2
         img_sliced = img[image_middle_line:]
@@ -29,13 +29,14 @@ class F1GazeboSimplifiedPerception:
             for _, x in enumerate(centrals)
         ]
 
-        F1GazeboUtils.show_image_with_centrals(
-           "centrals", mask, 5, centrals, centrals_normalized, x_row
-        )
+        if show_monitoring:
+            F1GazeboUtils.show_image_with_centrals(
+               "centrals", mask, 5, centrals, centrals_normalized, x_row
+            )
+
+        # number_of_points = len(np.nonzero(lines)[1])
 
         return centrals, centrals_normalized
-
-
     @staticmethod
     def get_center(lines):
         ''' 
