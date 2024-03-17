@@ -23,7 +23,7 @@ import time
 import numpy as np
 import cv2
 
-from carla_birdeye_view import BirdViewProducer, BirdViewCropType, PixelDimensions
+#from carla_birdeye_view import BirdViewProducer, BirdViewCropType, PixelDimensions
 
 try:
     import pygame

@@ -275,7 +275,7 @@ class TrainerFollowLaneDDPGCarla:
         # best_epoch = 1
 
         if self.global_params.mode == "retraining":
-            checkpoint = self.environment.environment["retrain_ddpg_tf_model_name"]
+            checkpoint = self.environment.environment["retrain_ddpg_tf_actor_model_name"]
             trained_agent=f"{self.global_params.models_dir}/{checkpoint}"
             self.ddpg_agent.load(trained_agent)
 

@@ -571,8 +571,7 @@ class LoadEnvVariablesDDPGCarla:
         # CARLA
         self.environment["carla_server"] = config["carla"]["carla_server"]
         self.environment["carla_client"] = config["carla"]["carla_client"]
-
-
+        self.environment["manager_port"] = config["carla"]["manager_port"]
 
         # Training/inference
         self.environment["mode"] = config["settings"]["mode"]
@@ -814,6 +813,7 @@ class LoadEnvVariablesPPOCarla:
         # CARLA
         self.environment["carla_server"] = config["carla"]["carla_server"]
         self.environment["carla_client"] = config["carla"]["carla_client"]
+        self.environment["manager_port"] = config["carla"]["manager_port"]
 
         # Algorithm
         self.environment["critic_lr"] = config["algorithm"]["ppo"]["critic_lr"]

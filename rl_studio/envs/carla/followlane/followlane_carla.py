@@ -150,7 +150,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         self.world = self.client.load_world(config["town"])
         self.original_settings = self.world.get_settings()
-        self.traffic_manager = self.client.get_trafficmanager(8000)
+        self.traffic_manager = self.client.get_trafficmanager(config["manager_port"])
         settings = self.world.get_settings()
         settings.fixed_delta_seconds = 0.05
         if self.sync_mode:

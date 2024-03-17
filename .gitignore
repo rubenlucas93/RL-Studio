@@ -15,7 +15,8 @@ catkin_ws
 output
 recorders
 logs
-checkpoints
+rl_studio/checkpoints/*
+!rl_studio/checkpoints/follow_lane_stable_models/
 metrics
 
 ### Images ###
