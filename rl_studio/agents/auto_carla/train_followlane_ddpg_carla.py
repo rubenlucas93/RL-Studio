@@ -274,11 +274,6 @@ class TrainerFollowLaneDDPGCarla:
         # best_epoch_training_time = 0
         # best_epoch = 1
 
-        if self.global_params.mode == "retraining":
-            checkpoint = self.environment.environment["retrain_ddpg_tf_actor_model_name"]
-            trained_agent=f"{self.global_params.models_dir}/{checkpoint}"
-            self.ddpg_agent.load(trained_agent)
-
         self.log.logger.info(
             f"\nstates = {self.global_params.states}\n"
             f"states_set = {self.global_params.states_set}\n"
@@ -315,7 +310,6 @@ class TrainerFollowLaneDDPGCarla:
             self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward)
             self.env.destroy_all_actors()
             self.env.display_manager.destroy()
-
         # self.env.close()
 
     def set_stats(self, info):

@@ -419,12 +419,12 @@ class DDPGAgent:
                 )
                 self.target_critic.set_weights(self.critic_model.get_weights())
 
-    def load_inference_model(self, models_dir, config):
+    def load_inference_model(self, models_dir, checkpoint):
         """
         we work with actor_model. Try also target_actor
         """
         path_actor_inference_model = (
-            f"{models_dir}/{config['inference_ddpg_tf_actor_model_name']}"
+            f"{models_dir}/{checkpoint}"
         )
         actor_inference_model = load_model(path_actor_inference_model, compile=False)
         # critic_inference_model = load_model(path_critic_inference_model, compile=False)
