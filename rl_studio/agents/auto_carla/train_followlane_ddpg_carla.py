@@ -164,16 +164,6 @@ class TrainerFollowLaneDDPGCarla:
                 f"steps = {step}\n"
             )
 
-    def save_if_completed(self, episode, step, cumulated_reward):
-        if step >= self.env_params.estimated_steps:
-        #    self.ddpg_agent.save(
-        #        f"{self.global_params.models_dir}/"
-        #        f"{time.strftime('%Y%m%d-%H%M%S')}_LAPCOMPLETED"
-        #        f"MaxReward-{int(cumulated_reward)}_"
-        #        f"Epoch-{episode}")
-            return True
-        return False
-
     def log_and_plot_rewards(self, episode, step, cumulated_reward):
         # Showing stats in screen for monitoring. Showing every 'save_every_step' value
         if not self.all_steps % self.env_params.save_every_step:
@@ -290,19 +280,21 @@ class TrainerFollowLaneDDPGCarla:
                 range(1, self.env_params.total_episodes + 1), ascii=True, unit="episodes"
         ):
             self.tensorboard.step = episode
-            done = False
             cumulated_reward = 0
+            failures = 0
             step = 1
 
             prev_state, _ = self.env.reset()
             start_time = time.time()
-            while not done:
+            while failures < 3:
                 state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward)
                 prev_state = state
                 step += 1
+                if done:
+                    failures += 1
+                else:
+                    failures = 0
 
-                if not done:
-                    done = self.save_if_completed(episode, step, cumulated_reward)
                 self.env.display_manager.render()
             episode_time = time.time() - start_time
 

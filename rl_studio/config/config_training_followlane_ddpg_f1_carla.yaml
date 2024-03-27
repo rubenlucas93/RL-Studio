@@ -18,14 +18,14 @@ settings:
   metrics_dir: "./metrics"
   debug_stats: false
   show_monitoring: true
-  steps_to_decrease: 30000
+  steps_to_decrease: 10000
   decrease_substraction: 0.01
-  decrease_min: 0.05
+  decrease_min: 0.02
   reward_params:
     function: pow
-    punish_zig_zag_value: 1
+    punish_zig_zag_value: 0
     punish_ineffective_vel: 1
-    beta_1: 0.7
+    beta_1: 0.95
 
 ros:
   ros_master_uri: "11311"
@@ -33,7 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: "20240308-173823_IMPROVED_S-sp5_A-continuous_MR-809_E-10239"
+    retrain_ddpg_tf_model_name: "20240327-141141_IMPROVED_S-sp10_A-continuous_MR-280_E-5560"
 
 inference:
   ddpg:
@@ -43,12 +43,12 @@ algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.2
+    std_dev: 0.1
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
-    replay_memory_size: 50_000
+    replay_memory_size: 10_000
     memory_fraction: 0.20
     critic_lr: 0.002
-    actor_lr: 0.001
+    actor_lr: 0.0015
     buffer_capacity: 100_000
     batch_size: 64
 

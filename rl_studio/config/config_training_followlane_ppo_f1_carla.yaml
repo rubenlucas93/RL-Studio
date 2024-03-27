@@ -1,5 +1,5 @@
 settings:
-  mode: retraining # training, retraining, inference
+  mode: training # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
   algorithm: ppo_continuous # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
@@ -116,6 +116,7 @@ carla_environments:
     rolename: "hero" #name
     gamma: 2.2 #for camera
     sync: True #syncronous mode or async
+    detection_mode: "programmatic"
     alternate_pose: False
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 1471 # 6927
