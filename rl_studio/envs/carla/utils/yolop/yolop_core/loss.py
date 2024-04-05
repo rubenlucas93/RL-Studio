@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 from .general import bbox_iou
 from .postprocess import build_targets
-from rl_studio.envs.carla.utils.yolop_core.evaluate import SegmentationMetric
+from rl_studio.envs.carla.utils.yolop.yolop_core.evaluate import SegmentationMetric
 
 class MultiHeadLoss(nn.Module):
     """

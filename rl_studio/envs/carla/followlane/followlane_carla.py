@@ -1,5 +1,4 @@
 import os
-import weakref
 from collections import Counter
 import math
 import time
@@ -9,8 +8,6 @@ import cv2
 import torch
 from numpy import random
 import numpy as np
-from rl_studio.envs.carla.utils.YOLOP import get_net
-import torchvision.transforms as transforms
 from rl_studio.envs.carla.followlane.followlane_env import FollowLaneEnv
 from rl_studio.envs.carla.followlane.settings import FollowLaneCarlaConfig
 from rl_studio.envs.carla.followlane.utils import AutoCarlaUtils
@@ -25,21 +22,6 @@ from rl_studio.envs.carla.utils.visualize_multiple_sensors import (
     CustomTimer,
 )
 import pygame
-from rl_studio.envs.carla.utils.global_route_planner import (
-    GlobalRoutePlanner,
-)
-
-from rl_studio.envs.carla.utils.yolop_core.postprocess import morphological_process, connect_lane
-from rl_studio.envs.carla.utils.yolop_core.general import non_max_suppression, scale_coords
-
-normalize = transforms.Normalize(
-    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-)
-
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    normalize,
-])
 
 NO_DETECTED = 0
 
@@ -136,7 +118,26 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
         self.sync_mode = config["sync"]
+        self.reset_threshold = config["reset_threshold"]
         self.detection_mode = config.get("detection_mode")
+        if self.detection_mode != 'programmatic':
+            from rl_studio.envs.carla.utils.yolop.YOLOP import get_net
+            import torchvision.transforms as transforms
+            normalize = transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            )
+
+            self.transform = transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])
+            # INIT YOLOP
+            self.yolop_model = get_net()
+            self.device = select_device()
+            checkpoint = torch.load("envs/carla/utils/yolop/weights/End-to-end.pth",
+                                    map_location=self.device)
+            self.yolop_model.load_state_dict(checkpoint['state_dict'])
+            self.yolop_model = self.yolop_model.to(self.device)
         # self.display_manager = None
         # self.vehicle = None
         # self.actor_list = []
@@ -153,8 +154,10 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.original_settings = self.world.get_settings()
         self.traffic_manager = self.client.get_trafficmanager(config["manager_port"])
         settings = self.world.get_settings()
-        settings.fixed_delta_seconds = 0.1
+        self.forced_freq = config.get("async_forced_delta_seconds")
         if self.sync_mode:
+            settings.max_substep_delta_time = 0.02
+            settings.fixed_delta_seconds = config.get("fixed_delta_seconds")
             settings.synchronous_mode = True
             self.traffic_manager.set_synchronous_mode(True)
         else:
@@ -177,14 +180,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         self.perfect_distance_pixels = None
         self.perfect_distance_normalized = None
-
-        # INIT YOLOP
-        self.yolop_model = get_net()
-        self.device = select_device()
-        checkpoint = torch.load("/home/ruben/Desktop/RL-Studio/rl_studio/envs/carla/utils/weights/End-to-end.pth",
-                                map_location=self.device)
-        self.yolop_model.load_state_dict(checkpoint['state_dict'])
-        self.yolop_model = self.yolop_model.to(self.device)
 
 
     def setup_car_fix_pose(self, init):
@@ -432,13 +427,19 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params = self.control(action)
 
         now = time.time()
-        params["fps"] = 1 / (now - self.previous_time)
-        self.previous_time = now
+        elapsed_time = now - self.previous_time
 
         if self.sync_mode:
             self.world.tick()
         else:
+            if elapsed_time < self.forced_freq:
+                wait_time = self.forced_freq - elapsed_time
+                time.sleep(wait_time)
             self.world.wait_for_tick()
+
+        now = time.time()
+        params["fps"] = 1 / (now - self.previous_time)
+        self.previous_time = now
 
         ## -- states
         # mask = self.preprocess_image(
@@ -476,8 +477,19 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         distance_error = [abs(x) for x in right_lane_normalized_distances]
         ## -------- Rewards
         reward, done = self.rewards_easy(distance_error, params)
+
+        params["bad_perception"], _ = self.has_bad_perception(right_lane_normalized_distances, threshold=0.999)
+
         right_lane_normalized_distances.append(params["velocity"]/5)
         right_lane_normalized_distances.append(params["steering_angle"])
+
+        if self.sync_mode:
+            transform = self.car.get_transform()
+            spectator = self.world.get_spectator()
+            spectator_location = carla.Transform(
+                transform.location + carla.Location(z=100),
+                carla.Rotation(-90, transform.rotation.yaw, 0))
+            spectator.set_transform(spectator_location)
 
         return np.array(right_lane_normalized_distances), reward, done, params
 
@@ -516,7 +528,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return function_reward
 
     def rewards_easy(self, distance_error, params):
-        done, states_non_line = self.end_if_conditions(distance_error, threshold=0.3)
+        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold)
         params["d_reward"] = 0
         params["v_reward"] = 0
         params["v_eff_reward"] = 0
@@ -529,7 +541,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         d_rewards = []
         for _, error in enumerate(distance_error):
-            d_rewards.append(1 - error)
+            d_rewards.append(math.pow(1 - error, 5))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(distance_error)
@@ -537,7 +549,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         # reward Max = 1 here
         punish = 0
-        punish += self.punish_zig_zag_value * params["steering_angle"]
+        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
 
         v_reward = params["velocity"]/5
         v_eff_reward = v_reward * d_reward
@@ -598,23 +610,19 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def detect_lines(self, raw_image):
         if self.detection_mode == 'programmatic':
-            gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2GRAY)
-            # blur = cv2.GaussianBlur(gray, (9, 9), 0)
-            mask_white = cv2.inRange(gray, 200, 255)
-            # cv2.erode(mask_white, (9, 9), iterations=1)
-            cv2.imshow("mask_white", mask_white)
-            # edges = cv2.Canny(mask_white, 50, 100)
-            ll_segment = cv2.dilate(mask_white, (10, 10), iterations=2)
-            cv2.imshow("dilated", ll_segment)
+            gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
+            # mask_white = cv2.inRange(gray, 200, 255)
+            # mask_image = cv2.bitWiseAnd(gray, mask_white)
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            ll_segment = cv2.Canny(blur, 50, 100)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_programmatic(processed)
-            detected_lines = self.merge_and_extend_lines(lines, ll_segment)
         else:
             with torch.no_grad():
-                ll_segment = (self.detect(raw_image) * 255).astype(np.uint8)
+                ll_segment = (self.detect_yolop(raw_image) * 255).astype(np.uint8)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_yolop(processed)
-            detected_lines = self.merge_and_extend_lines(lines, ll_segment)
+        detected_lines = self.merge_and_extend_lines(lines, ll_segment)
 
         # line_mask = morphological_process(line_mask, kernel_size=15, func_type=cv2.MORPH_CLOSE)
         # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_OPEN)
@@ -630,12 +638,12 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         return ll_segment
 
-    def detect(self, raw_image):
+    def detect_yolop(self, raw_image):
         # Get names and colors
         names = self.yolop_model.module.names if hasattr(self.yolop_model, 'module') else self.yolop_model.names
 
         # Run inference
-        img = transform(raw_image).to(self.device)
+        img = self.transform(raw_image).to(self.device)
         img = img.float()  # uint8 to fp16/32
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
@@ -679,7 +687,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         # Step 1: Create a binary mask image representing the trapeze
         mask = np.zeros_like(ll_segment)
-        pts = np.array([[300, 260], [-400, 600], [800, 600], [380, 270]], np.int32)
+        # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
+        pts = np.array([[280, 270], [-50, 450], [630, 450], [440, 270]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
         cv2.imshow("applied_mask", mask)
 
@@ -694,12 +703,16 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def post_process_hough_yolop(self, ll_segment):
         # Step 4: Perform Hough transform to detect lines
+        cv2.imshow("raw", ll_segment)
+        ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
+        ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
+        cv2.imshow("preprocess", ll_segment)
         lines = cv2.HoughLinesP(
             ll_segment,  # Input edge image
             1,  # Distance resolution in pixels
             np.pi/60,  # Angle resolution in radians
-            threshold=10,  # Min number of votes for valid line
-            minLineLength=10,  # Min allowed length of line
+            threshold=8,  # Min number of votes for valid line
+            minLineLength=8,  # Min allowed length of line
             maxLineGap=20  # Max allowed gap between line for joining them
         )
 
@@ -721,9 +734,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         lines = cv2.HoughLinesP(
             edges,  # Input edge image
             1,  # Distance resolution in pixels
-            np.pi / 60,  # Angle resolution in radians
-            threshold=50,  # Min number of votes for valid line
-            minLineLength=30,  # Min allowed length of line
+            np.pi / 90,  # Angle resolution in radians
+            threshold=35,  # Min number of votes for valid line
+            minLineLength=15,  # Min allowed length of line
             maxLineGap=20  # Max allowed gap between line for joining them
         )
         # Sort lines by their length
@@ -756,9 +769,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             ll_segment,  # Input edge image
             1,  # Distance resolution in pixels
             np.pi/60,  # Angle resolution in radians
-            threshold=10,  # Min number of votes for valid line
+            threshold=20,  # Min number of votes for valid line
             minLineLength=10,  # Min allowed length of line
-            maxLineGap=20  # Max allowed gap between line for joining them
+            maxLineGap=50  # Max allowed gap between line for joining them
         )
 
         line_mask = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
@@ -781,8 +794,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             1,  # Distance resolution in pixels
             np.pi / 60,  # Angle resolution in radians
             threshold=20,  # Min number of votes for valid line
-            minLineLength=10,  # Min allowed length of line
-            maxLineGap=20  # Max allowed gap between line for joining them
+            minLineLength=13,  # Min allowed length of line
+            maxLineGap=50  # Max allowed gap between line for joining them
         )
         # Sort lines by their length
         # lines = sorted(lines, key=lambda x: x[0][0] * np.sin(x[0][1]), reverse=True)[:5]
@@ -830,15 +843,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return extended_lines
 
     def end_if_conditions(self, distances_error, threshold=0.3, min_conf_states=7):
-        done = False
-
-        states_above_threshold = sum(1 for state_value in distances_error if  state_value > threshold)
-
-        if states_above_threshold is None:
-            states_above_threshold = 0
-
-        if (states_above_threshold > len(distances_error) - min_conf_states):  # salimos porque no detecta linea a la derecha
-            done = True
+        done, states_above_threshold = self.has_bad_perception(distances_error, threshold, min_conf_states)
         if len(self.collision_hist) > 0:  # te has chocado, baby
             done = True
 
@@ -927,7 +932,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             found = False
             for merged_line in merged_lines:
                 angle_diff = abs(merged_line['angle'] - angle)
-                if angle_diff < 10:  # Adjust this threshold based on your requirement
+                if angle_diff < 20 and abs(angle) > 25:  # Adjust this threshold based on your requirement
                     # Merge the lines by averaging their coordinates
                     merged_line['x1'] = (merged_line['x1'] + x1) // 2
                     merged_line['y1'] = (merged_line['y1'] + y1) // 2
@@ -936,11 +941,13 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                     found = True
                     break
 
-            if not found:
+            if not found and abs(angle) > 25:
                 merged_lines.append({'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'angle': angle})
 
         # Draw the merged lines on the original image
         merged_image = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
+        #if len(merged_lines) < 2 or len(merged_lines) > 2:
+        #    print("ii")
         for line in merged_lines:
             x1, y1, x2, y2 = line['x1'], line['y1'], line['x2'], line['y2']
             cv2.line(merged_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
@@ -974,6 +981,17 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             # Draw the extended line on the image
             cv2.line(line_mask, (int(extended_x1), extended_y1), (int(extended_x2), extended_y2), (255, 0, 0), 2)
         return line_mask
+
+    def has_bad_perception(self, distances_error, threshold=0.3, min_conf_states=7):
+        done = False
+        states_above_threshold = sum(1 for state_value in distances_error if  state_value > threshold)
+
+        if states_above_threshold is None:
+            states_above_threshold = 0
+
+        if (states_above_threshold > len(distances_error) - min_conf_states):  # salimos porque no detecta linea a la derecha
+            done = True
+        return done, states_above_threshold
 
 
 

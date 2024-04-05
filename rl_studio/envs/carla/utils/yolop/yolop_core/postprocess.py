@@ -1,5 +1,5 @@
 import torch
-from rl_studio.envs.carla.utils.yolop_utils import is_parallel
+from rl_studio.envs.carla.utils.yolop.yolop_utils import is_parallel
 import numpy as np
 np.set_printoptions(threshold=np.inf)
 import cv2

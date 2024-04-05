@@ -339,7 +339,7 @@ class DDPGAgent:
         self.target_update_counter = 0
 
         # load pretrained model for continuing training (not inference)
-        if config["mode"] == "retraining":
+        if config["mode"] in ["inference", "retraining"]:
             print("---------------------- entry load retrained model")
             print(f"{outdir}/{config['retrain_ddpg_tf_actor_model_name']}")
             print(f"{outdir}/{config['retrain_ddpg_tf_critic_model_name']}")

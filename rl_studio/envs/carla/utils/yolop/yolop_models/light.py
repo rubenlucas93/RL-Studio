@@ -5,14 +5,14 @@ import sys,os
 import math
 import sys
 sys.path.append(os.getcwd())
-from rl_studio.envs.carla.utils.yolop_utils import initialize_weights
-# from rl_studio.envs.carla.utils.yolop_models.common2 import DepthSeperabelConv2d as Conv
-# from rl_studio.envs.carla.utils.yolop_models.common2 import SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
-from rl_studio.envs.carla.utils.yolop_models.common import Conv, SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
+from rl_studio.envs.carla.utils.yolop.yolop_utils import initialize_weights
+# from rl_studio.envs.carla.utils.yolop.yolop_models.common2 import DepthSeperabelConv2d as Conv
+# from rl_studio.envs.carla.utils.yolop.yolop_models.common2 import SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
+from rl_studio.envs.carla.utils.yolop.yolop_models.common import Conv, SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
 from torch.nn import Upsample
-from rl_studio.envs.carla.utils.yolop_utils import check_anchor_order
-from rl_studio.envs.carla.utils.yolop_core.evaluate import SegmentationMetric
-from rl_studio.envs.carla.utils.yolop_utils.utils import time_synchronized
+from rl_studio.envs.carla.utils.yolop.yolop_utils import check_anchor_order
+from rl_studio.envs.carla.utils.yolop.yolop_core.evaluate import SegmentationMetric
+from rl_studio.envs.carla.utils.yolop.yolop_utils.utils import time_synchronized
 
 CSPDarknet_s = [
 [ -1, Focus, [3, 32, 3]],

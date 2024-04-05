@@ -82,8 +82,8 @@ class TrainerFollowLaneDDPGCarla:
     """
 
     def __init__(self, config):
-        self.actor_loss = None
-        self.critic_loss = None
+        self.actor_loss = 0
+        self.critic_loss = 0
         self.algoritmhs_params = LoadAlgorithmParams(config)
         self.env_params = LoadEnvParams(config)
         self.global_params = LoadGlobalParams(config)
@@ -111,8 +111,9 @@ class TrainerFollowLaneDDPGCarla:
         self.episodes_d_reward = []
         self.episodes_steer = []
         self.episodes_reward = []
+        self.step_fps = []
 
-        self.exploration = self.algoritmhs_params.std_dev
+        self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode !="inference" else 0
 
         # TODO This must come from config states in yaml
         state_size = len(self.environment.environment["x_row"]) + 2
@@ -196,8 +197,11 @@ class TrainerFollowLaneDDPGCarla:
         self.tensorboard.update_actions(action, self.all_steps)
 
         state, reward, done, info = self.env.step(action)
+        self.step_fps.append(info["fps"])
+        # in csae perception was bad, we keep the previous frame
+        if info["bad_perception"]:
+            state = prev_state
         self.set_stats(info)
-        # fps = info["fps"]
 
         if self.all_steps % self.global_params.steps_to_decrease == 0:
             self.exploration = max(self.global_params.decrease_min, self.exploration - self.global_params.decrease_substraction)
@@ -242,6 +246,7 @@ class TrainerFollowLaneDDPGCarla:
                 # best_episode_until_now=best_epoch,
                 # with_highest_reward=int(current_max_reward),
             )
+        if self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
             self.buffer.record((prev_state, action, reward, state))
             self.actor_loss, self.critic_loss = self.buffer.learn(self.ddpg_agent, self.algoritmhs_params.gamma)
             self.ddpg_agent.update_target(
@@ -254,7 +259,7 @@ class TrainerFollowLaneDDPGCarla:
                 self.ddpg_agent.critic_model.variables,
                 self.algoritmhs_params.tau,
             )
-            return state, cumulated_reward, done
+        return state, cumulated_reward, done
 
     def main(self):
         hyperparams = combine_attributes(self.algoritmhs_params,
@@ -285,8 +290,7 @@ class TrainerFollowLaneDDPGCarla:
             step = 1
 
             prev_state, _ = self.env.reset()
-            start_time = time.time()
-            while failures < 3:
+            while failures < 5:
                 state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward)
                 prev_state = state
                 step += 1
@@ -296,7 +300,7 @@ class TrainerFollowLaneDDPGCarla:
                     failures = 0
 
                 self.env.display_manager.render()
-            episode_time = time.time() - start_time
+            episode_time = step * self.environment.environment["fixed_delta_seconds"]
 
             self.save_if_best_epoch(episode, step, cumulated_reward)
             self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward)
@@ -319,6 +323,8 @@ class TrainerFollowLaneDDPGCarla:
         max_reward = np.max(self.episodes_reward)
         steering_std_dev = np.std(self.episodes_steer)
         advanced_meters = avg_speed * episode_time
+        avg_fps = np.mean(self.step_fps)
+        min_fps = np.min(self.step_fps)
         self.tensorboard.update_stats(
             std_dev=self.exploration,
             steps_episode=step,
@@ -330,10 +336,13 @@ class TrainerFollowLaneDDPGCarla:
             steering_std_dev=steering_std_dev,
             advanced_meters=advanced_meters,
             actor_loss=self.actor_loss,
-            critic_loss=self.critic_loss
+            critic_loss=self.critic_loss,
+            min_fps=min_fps,
+            mean_fps=avg_fps
         )
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_steer = []
         self.episodes_reward = []
+        self.step_fps = []
 

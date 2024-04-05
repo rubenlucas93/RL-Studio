@@ -479,6 +479,7 @@ class LoadEnvVariablesManualCarla:
         ]
         self.environment["gamma"] = config[self.environment_set][self.env]["gamma"]
         self.environment["sync"] = config[self.environment_set][self.env]["sync"]
+        self.environment["reset_threshold"] = config[self.environment_set][self.env].get("reset_threshold")
         self.environment["waypoints_meters"] = config[self.environment_set][self.env][
             "waypoints_meters"
         ]
@@ -619,6 +620,10 @@ class LoadEnvVariablesDDPGCarla:
         ]
         self.environment["gamma"] = config[self.environment_set][self.env]["gamma"]
         self.environment["sync"] = config[self.environment_set][self.env]["sync"]
+        self.environment["reset_threshold"] = config[self.environment_set][self.env].get("reset_threshold")
+        self.environment["detection_mode"] = config[self.environment_set][self.env]["detection_mode"]
+        self.environment["fixed_delta_seconds"] = config[self.environment_set][self.env]["fixed_delta_seconds"]
+        self.environment["async_forced_delta_seconds"] = config[self.environment_set][self.env]["async_forced_delta_seconds"]
         self.environment["waypoints_meters"] = config[self.environment_set][self.env][
             "waypoints_meters"
         ]
@@ -756,7 +761,10 @@ class LoadEnvVariablesPPOCarla:
         ]
         self.environment["gamma"] = config[self.environment_set][self.env]["gamma"]
         self.environment["sync"] = config[self.environment_set][self.env]["sync"]
+        self.environment["reset_threshold"] = config[self.environment_set][self.env].get("reset_threshold")
         self.environment["detection_mode"] = config[self.environment_set][self.env]["detection_mode"]
+        self.environment["fixed_delta_seconds"] = config[self.environment_set][self.env]["fixed_delta_seconds"]
+        self.environment["async_forced_delta_seconds"] = config[self.environment_set][self.env]["async_forced_delta_seconds"]
         self.environment["waypoints_meters"] = config[self.environment_set][self.env][
             "waypoints_meters"
         ]
@@ -1265,6 +1273,7 @@ class LoadEnvVariablesQlearnCarla:
         ]
         self.environment["gamma"] = config[self.environment_set][self.env]["gamma"]
         self.environment["sync"] = config[self.environment_set][self.env]["sync"]
+        self.environment["reset_threshold"] = config[self.environment_set][self.env].get("reset_threshold")
         self.environment["waypoints_meters"] = config[self.environment_set][self.env][
             "waypoints_meters"
         ]

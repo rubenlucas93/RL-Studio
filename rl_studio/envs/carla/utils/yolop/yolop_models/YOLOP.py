@@ -8,14 +8,14 @@ sys.path.append(os.getcwd())
 #sys.path.append("lib/models")
 #sys.path.append("lib/utils")
 #sys.path.append("/workspace/wh/projects/DaChuang")
-from rl_studio.envs.carla.utils.yolop_utils import initialize_weights
-# from rl_studio.envs.carla.utils.yolop_models.common2 import DepthSeperabelConv2d as Conv
-# from rl_studio.envs.carla.utils.yolop_models.common2 import SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
-from rl_studio.envs.carla.utils.yolop_models.common import Conv, SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect, SharpenConv
+from rl_studio.envs.carla.utils.yolop.yolop_utils import initialize_weights
+# from rl_studio.envs.carla.utils.yolop.yolop_models.common2 import DepthSeperabelConv2d as Conv
+# from rl_studio.envs.carla.utils.yolop.yolop_models.common2 import SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect
+from rl_studio.envs.carla.utils.yolop.yolop_models.common import Conv, SPP, Bottleneck, BottleneckCSP, Focus, Concat, Detect, SharpenConv
 from torch.nn import Upsample
-from rl_studio.envs.carla.utils.yolop_utils import check_anchor_order
-from rl_studio.envs.carla.utils.yolop_core.evaluate import SegmentationMetric
-from rl_studio.envs.carla.utils.yolop_utils.utils import time_synchronized
+from rl_studio.envs.carla.utils.yolop.yolop_utils import check_anchor_order
+from rl_studio.envs.carla.utils.yolop.yolop_core.evaluate import SegmentationMetric
+from rl_studio.envs.carla.utils.yolop.yolop_utils.utils import time_synchronized
 
 """
 MCnet_SPP = [
