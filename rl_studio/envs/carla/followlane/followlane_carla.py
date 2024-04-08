@@ -120,7 +120,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.sync_mode = config["sync"]
         self.reset_threshold = config["reset_threshold"]
         self.detection_mode = config.get("detection_mode")
-        if self.detection_mode != 'programmatic':
+        if self.detection_mode == 'yolop':
             from rl_studio.envs.carla.utils.yolop.YOLOP import get_net
             import torchvision.transforms as transforms
             normalize = transforms.Normalize(
@@ -138,6 +138,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                                     map_location=self.device)
             self.yolop_model.load_state_dict(checkpoint['state_dict'])
             self.yolop_model = self.yolop_model.to(self.device)
+        elif self.detection_mode == "lane_detector":
+            self.lane_model = torch.load('envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth')
+            self.lane_model.eval()
         # self.display_manager = None
         # self.vehicle = None
         # self.actor_list = []
@@ -541,7 +544,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         d_rewards = []
         for _, error in enumerate(distance_error):
-            d_rewards.append(math.pow(1 - error, 5))
+            d_rewards.append(math.pow(1 - error, 3))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(distance_error)
@@ -551,7 +554,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         punish = 0
         punish += self.punish_zig_zag_value * abs(params["steering_angle"])
 
-        v_reward = params["velocity"]/5
+        v_reward = params["velocity"]/10
         v_eff_reward = v_reward * d_reward
         params["v_reward"] = v_reward
         params["v_eff_reward"] = v_eff_reward
@@ -617,11 +620,20 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             ll_segment = cv2.Canny(blur, 50, 100)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_programmatic(processed)
-        else:
+        elif self.detection_mode == 'yolop':
             with torch.no_grad():
                 ll_segment = (self.detect_yolop(raw_image) * 255).astype(np.uint8)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_yolop(processed)
+        else:
+            with torch.no_grad():
+                ll_segment, left_mask, right_mask = self.detect_lane_detector(raw_image)[0]
+            ll_segment = np.zeros_like(raw_image)
+            ll_segment = self.lane_detection_overlay(ll_segment, left_mask, right_mask)
+            ll_segment = cv2.cvtColor(ll_segment, cv2.COLOR_BGR2GRAY)
+            processed = self.post_process(ll_segment)
+            lines = self.post_process_hough_yolop(processed)
+
         detected_lines = self.merge_and_extend_lines(lines, ll_segment)
 
         # line_mask = morphological_process(line_mask, kernel_size=15, func_type=cv2.MORPH_CLOSE)
@@ -993,5 +1005,18 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             done = True
         return done, states_above_threshold
 
+    def detect_lane_detector(self, raw_image):
+        image_tensor = raw_image.transpose(2, 0, 1).astype('float32') / 255
+        x_tensor = torch.from_numpy(image_tensor).to("cuda").unsqueeze(0)
+        model_output = torch.softmax(self.lane_model.forward(x_tensor), dim=1).cpu().numpy()
+        return model_output
+
+
+    def lane_detection_overlay(self, image, left_mask, right_mask):
+        res = np.copy(image)
+        # We show only points with probability higher than 0.5
+        res[left_mask > 0.5, :] = [255,0,0]
+        res[right_mask > 0.5,:] = [0, 0, 255]
+        return res
 
 

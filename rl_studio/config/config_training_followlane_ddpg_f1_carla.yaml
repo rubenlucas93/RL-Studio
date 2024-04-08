@@ -20,10 +20,10 @@ settings:
   show_monitoring: false
   steps_to_decrease: 20000
   decrease_substraction: 0.005
-  decrease_min: 0.025
+  decrease_min: 0.03
   reward_params:
     function: pow
-    punish_zig_zag_value: 1
+    punish_zig_zag_value: 0
     punish_ineffective_vel: 1
     beta_1: 0.99
 
@@ -33,7 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: 20240402-155520_IMPROVED_S-sp10_A-continuous_MR-226_E-5755
+    retrain_ddpg_tf_model_name: 20240411-234851_IMPROVED_S-sp10_A-continuous_MR-431_E-799
 
 inference:
   ddpg:
@@ -43,12 +43,12 @@ algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.06
+    std_dev: 0.05
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
-    critic_lr: 0.003
-    actor_lr: 0.002
+    critic_lr: 0.0025
+    actor_lr: 0.0015
     buffer_capacity: 100_000
     batch_size: 64
 
@@ -107,10 +107,10 @@ carla_environments:
     rolename: "hero" #name
     gamma: 2.2 #for camera
     sync: true #syncronous mode or async
-    detection_mode: programmatic
+    detection_mode: lane_detector
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.5
+    reset_threshold: 1
     alternate_pose: false
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6927 # 6927  1471
@@ -121,4 +121,4 @@ carla_environments:
 carla:
   carla_server: localhost
   carla_client: 4004
-  manager_port: 8009
+  manager_port: 8010

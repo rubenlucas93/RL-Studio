@@ -694,12 +694,12 @@ class DDPGAgent:
     def get_critic_model_sp_continuous_actions(self):
         # State as input
         state_input = layers.Input(shape=(self.OBSERVATION_SPACE_VALUES))
-        state_out = layers.Dense(64, activation="relu")(state_input)
+        state_out = layers.Dense(128, activation="relu")(state_input)
         # state_out = layers.Flatten()(state_out)
 
         # Actions V and W. For more actions, we should add more layers
         action_input_v = layers.Input(shape=(1))
-        action_out_v = layers.Dense(32, activation="relu")(action_input_v)
+        action_out_v = layers.Dense(128, activation="relu")(action_input_v)
 
         action_input_w = layers.Input(shape=(1))
         action_out_w = layers.Dense(32, activation="relu")(action_input_w)

@@ -112,6 +112,7 @@ class TrainerFollowLaneDDPGCarla:
         self.episodes_steer = []
         self.episodes_reward = []
         self.step_fps = []
+        self.bad_perceptions = 0
 
         self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode !="inference" else 0
 
@@ -185,8 +186,13 @@ class TrainerFollowLaneDDPGCarla:
                 f"current step = {step}\n"
             )
 
-    def one_step_iteration(self, episode, step, prev_state, cumulated_reward):
+    def one_step_iteration(self, episode, step, prev_state, cumulated_reward, bad_perception):
         self.all_steps += 1
+
+        if bad_perception:
+            action = [0, 0]
+            state, reward, done, info = self.env.step(action)
+            return state, cumulated_reward, done
 
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
@@ -201,6 +207,7 @@ class TrainerFollowLaneDDPGCarla:
         # in csae perception was bad, we keep the previous frame
         if info["bad_perception"]:
             state = prev_state
+            self.bad_perceptions += 1
         self.set_stats(info)
 
         if self.all_steps % self.global_params.steps_to_decrease == 0:
@@ -284,6 +291,7 @@ class TrainerFollowLaneDDPGCarla:
         for episode in tqdm(
                 range(1, self.env_params.total_episodes + 1), ascii=True, unit="episodes"
         ):
+            done = False
             self.tensorboard.step = episode
             cumulated_reward = 0
             failures = 0
@@ -291,7 +299,7 @@ class TrainerFollowLaneDDPGCarla:
 
             prev_state, _ = self.env.reset()
             while failures < 5:
-                state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward)
+                state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward, done)
                 prev_state = state
                 step += 1
                 if done:
@@ -325,6 +333,7 @@ class TrainerFollowLaneDDPGCarla:
         advanced_meters = avg_speed * episode_time
         avg_fps = np.mean(self.step_fps)
         min_fps = np.min(self.step_fps)
+        bad_perceptions_perc = self.bad_perceptions / step
         self.tensorboard.update_stats(
             std_dev=self.exploration,
             steps_episode=step,
@@ -338,11 +347,12 @@ class TrainerFollowLaneDDPGCarla:
             actor_loss=self.actor_loss,
             critic_loss=self.critic_loss,
             min_fps=min_fps,
-            mean_fps=avg_fps
+            mean_fps=avg_fps,
+            bad_perceptions_perc=bad_perceptions_perc
         )
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_steer = []
         self.episodes_reward = []
         self.step_fps = []
-
+        self.bad_perceptions = 0
