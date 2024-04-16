@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, timedelta
 import glob
 import time
 
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import gymnasium as gym
 import tensorflow as tf
 from tqdm import tqdm
@@ -51,6 +54,16 @@ try:
 except IndexError:
     pass
 
+# Function to update scatter plot with new data
+def update_scatter_plot(ax, x, y, z, xlabel, ylabel, zlabel):
+    ax.clear()
+    ax.scatter(x, y, z)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_zlabel(zlabel)
+    plt.draw()
+    plt.pause(0.001)
+
 def combine_attributes(obj1, obj2, obj3):
     combined_dict = {}
 
@@ -88,18 +101,30 @@ class TrainerFollowLaneDDPGCarla:
         self.env_params = LoadEnvParams(config)
         self.global_params = LoadGlobalParams(config)
         self.environment = LoadEnvVariablesDDPGCarla(config)
-        self.log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
-        self.log = LoggingHandler(self.log_file)
         self.loss = 0
 
         self.tensorboard = ModifiedTensorBoard(
             log_dir=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
         )
+        # Initialize the scatter plots
+        fig = plt.figure(figsize=(12, 10))
+        # Plot 1: Velocity - State[0] - Reward
+        self.ax1 = fig.add_subplot(221, projection='3d')
+        # Plot 2: Velocity - State[11] - Reward
+        self.ax2 = fig.add_subplot(222, projection='3d')
+        # Plot 3: Steer - State[0] - Reward
+        self.ax3 = fig.add_subplot(223, projection='3d')
+        # Plot 4: Steer - State[11] - Reward
+        self.ax4 = fig.add_subplot(224, projection='3d')
 
         os.makedirs(f"{self.global_params.models_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.logs_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.metrics_data_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.metrics_graphics_dir}", exist_ok=True)
+
+        log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
+        self.log = LoggingHandler(log_file)
+        #self.log.logger.basicConfig(filename=log_file, level=logging.INFO)
 
         ## Load Carla server
         # CarlaEnv.__init__(self)
@@ -113,6 +138,12 @@ class TrainerFollowLaneDDPGCarla:
         self.episodes_reward = []
         self.step_fps = []
         self.bad_perceptions = 0
+
+        self.all_steps_reward = []
+        self.all_steps_velocity = []
+        self.all_steps_steer = []
+        self.all_steps_state0 = []
+        self.all_steps_state11 = []
 
         self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode !="inference" else 0
 
@@ -189,10 +220,11 @@ class TrainerFollowLaneDDPGCarla:
     def one_step_iteration(self, episode, step, prev_state, cumulated_reward, bad_perception):
         self.all_steps += 1
 
+        # TODO ñapa para decelerar y no hacer giros bruscos cuando se pierda la percepción
         if bad_perception:
             action = [0, 0]
             state, reward, done, info = self.env.step(action)
-            return state, cumulated_reward, done
+            return state, cumulated_reward, done, info["bad_perception"]
 
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
@@ -208,7 +240,7 @@ class TrainerFollowLaneDDPGCarla:
         if info["bad_perception"]:
             state = prev_state
             self.bad_perceptions += 1
-        self.set_stats(info)
+        self.set_stats(info, prev_state)
 
         if self.all_steps % self.global_params.steps_to_decrease == 0:
             self.exploration = max(self.global_params.decrease_min, self.exploration - self.global_params.decrease_substraction)
@@ -253,6 +285,13 @@ class TrainerFollowLaneDDPGCarla:
                 # best_episode_until_now=best_epoch,
                 # with_highest_reward=int(current_max_reward),
             )
+        if not self.all_steps % 10000:
+            # Update scatter plot
+            update_scatter_plot(self.ax1,  self.all_steps_velocity,  self.all_steps_state0, self.all_steps_reward, "Velocity", "State[0]", "Reward")
+            update_scatter_plot(self.ax2,  self.all_steps_velocity,  self.all_steps_state11, self.all_steps_reward, "Velocity", "State[9]", "Reward")
+            update_scatter_plot(self.ax3,  self.all_steps_steer,  self.all_steps_state0, self.all_steps_reward, "Steer", "State[0]", "Reward")
+            update_scatter_plot(self.ax4,  self.all_steps_steer,  self.all_steps_state11, self.all_steps_reward, "Steer", "State[9]", "Reward")
+
         if self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
             self.buffer.record((prev_state, action, reward, state))
             self.actor_loss, self.critic_loss = self.buffer.learn(self.ddpg_agent, self.algoritmhs_params.gamma)
@@ -266,7 +305,7 @@ class TrainerFollowLaneDDPGCarla:
                 self.ddpg_agent.critic_model.variables,
                 self.algoritmhs_params.tau,
             )
-        return state, cumulated_reward, done
+        return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
         hyperparams = combine_attributes(self.algoritmhs_params,
@@ -298,8 +337,11 @@ class TrainerFollowLaneDDPGCarla:
             step = 1
 
             prev_state, _ = self.env.reset()
-            while failures < 5:
-                state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward, done)
+            while failures < 3:
+                state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state, cumulated_reward, done)
+                if bad_perception:
+                    last_bad_perception = step
+                    self.log.logger.info("bad perception in step " + str(step))
                 prev_state = state
                 step += 1
                 if done:
@@ -309,22 +351,30 @@ class TrainerFollowLaneDDPGCarla:
 
                 self.env.display_manager.render()
             episode_time = step * self.environment.environment["fixed_delta_seconds"]
+            self.log.logger.info("finished in step " + str(step))
 
+            since_last_perception = step - last_bad_perception
             self.save_if_best_epoch(episode, step, cumulated_reward)
-            self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward)
+            self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward, since_last_perception)
             self.env.destroy_all_actors()
             self.env.display_manager.destroy()
         # self.env.close()
 
-    def set_stats(self, info):
+    def set_stats(self, info, prev_state):
         self.episodes_speed.append(info["velocity"])
         self.episodes_steer.append(info["steering_angle"])
         self.episodes_d_reward.append(info["d_reward"])
         self.episodes_reward.append(info["reward"])
 
+        self.all_steps_reward.append(info["reward"])
+        self.all_steps_velocity.append(info["velocity"])
+        self.all_steps_steer.append(info["steering_angle"])
+        self.all_steps_state0.append(prev_state[0])
+        self.all_steps_state11.append(prev_state[9])
+
         pass
 
-    def calculate_and_report_episode_stats(self, episode_time, step, cumulated_reward):
+    def calculate_and_report_episode_stats(self, episode_time, step, cumulated_reward, since_last_perception):
         avg_speed = np.mean(self.episodes_speed)
         max_speed = np.max(self.episodes_speed)
         cum_d_reward = np.sum(self.episodes_d_reward)
@@ -348,7 +398,8 @@ class TrainerFollowLaneDDPGCarla:
             critic_loss=self.critic_loss,
             min_fps=min_fps,
             mean_fps=avg_fps,
-            bad_perceptions_perc=bad_perceptions_perc
+            bad_perceptions_perc=bad_perceptions_perc,
+            since_last_bad_perception=since_last_perception
         )
         self.episodes_speed = []
         self.episodes_d_reward = []

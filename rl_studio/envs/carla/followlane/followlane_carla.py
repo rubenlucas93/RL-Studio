@@ -544,7 +544,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         d_rewards = []
         for _, error in enumerate(distance_error):
-            d_rewards.append(math.pow(1 - error, 3))
+            d_rewards.append(math.pow(1 - error, 6))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(distance_error)
@@ -554,7 +554,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         punish = 0
         punish += self.punish_zig_zag_value * abs(params["steering_angle"])
 
-        v_reward = params["velocity"]/10
+        v_reward = params["velocity"]/50
         v_eff_reward = v_reward * d_reward
         params["v_reward"] = v_reward
         params["v_eff_reward"] = v_eff_reward
@@ -562,7 +562,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         beta = self.beta
         # TODO Ver que valores toma la velocity para compensarlo mejor
         function_reward = beta * d_reward + (1-beta) * v_eff_reward
-        function_reward -= punish
+        if function_reward > punish: # to avoid negative rewards
+            function_reward -= punish
         params["reward"] = function_reward
 
         return function_reward, done
@@ -618,11 +619,13 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             # mask_image = cv2.bitWiseAnd(gray, mask_white)
             blur = cv2.GaussianBlur(gray, (5, 5), 0)
             ll_segment = cv2.Canny(blur, 50, 100)
+            cv2.imshow("raw", ll_segment)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_programmatic(processed)
         elif self.detection_mode == 'yolop':
             with torch.no_grad():
                 ll_segment = (self.detect_yolop(raw_image) * 255).astype(np.uint8)
+            cv2.imshow("raw", ll_segment)
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_yolop(processed)
         else:
@@ -630,7 +633,14 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 ll_segment, left_mask, right_mask = self.detect_lane_detector(raw_image)[0]
             ll_segment = np.zeros_like(raw_image)
             ll_segment = self.lane_detection_overlay(ll_segment, left_mask, right_mask)
-            ll_segment = cv2.cvtColor(ll_segment, cv2.COLOR_BGR2GRAY)
+            cv2.imshow("raw", ll_segment)
+            # Extract blue and red channels
+            blue_channel = ll_segment[:, :, 0]  # Blue channel
+            red_channel = ll_segment[:, :, 2]  # Red channel
+            # Combine blue and red channels into a grayscale image
+            ll_segment = 0.5 * blue_channel + 0.5 * red_channel
+            ll_segment = cv2.convertScaleAbs(ll_segment)
+            # Display the grayscale image
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_yolop(processed)
 
@@ -700,7 +710,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # Step 1: Create a binary mask image representing the trapeze
         mask = np.zeros_like(ll_segment)
         # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
-        pts = np.array([[280, 270], [-50, 450], [630, 450], [440, 270]], np.int32)
+        pts = np.array([[280, 200], [-50, 450], [630, 450], [440, 200]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
         cv2.imshow("applied_mask", mask)
 
@@ -715,7 +725,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def post_process_hough_yolop(self, ll_segment):
         # Step 4: Perform Hough transform to detect lines
-        cv2.imshow("raw", ll_segment)
         ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
         ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
         cv2.imshow("preprocess", ll_segment)
@@ -994,9 +1003,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             cv2.line(line_mask, (int(extended_x1), extended_y1), (int(extended_x2), extended_y2), (255, 0, 0), 2)
         return line_mask
 
-    def has_bad_perception(self, distances_error, threshold=0.3, min_conf_states=7):
+    def has_bad_perception(self, distances_error, threshold=0.3, min_conf_states=5):
         done = False
-        states_above_threshold = sum(1 for state_value in distances_error if  state_value > threshold)
+        states_above_threshold = sum(1 for state_value in distances_error if state_value > threshold)
 
         if states_above_threshold is None:
             states_above_threshold = 0

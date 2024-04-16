@@ -658,7 +658,7 @@ class DDPGAgent:
         inputs = Input(shape=self.OBSERVATION_SPACE_VALUES)
         # last_init = tf.random_uniform_initializer(minval=-1, maxval=0.01)
         hidden_init = tf.keras.initializers.GlorotUniform()
-        shared_layer = Dense(16, activation="relu", kernel_initializer=hidden_init)
+        shared_layer = Dense(64, activation="relu", kernel_initializer=hidden_init)
 
         v_branch = self.build_branch(inputs, "v_output", shared_layer)
         w_branch = self.build_branch(inputs, "w_output", shared_layer)
@@ -671,7 +671,7 @@ class DDPGAgent:
         model = Model(
             inputs=inputs, outputs=[v_branch, w_branch], name="continuous_two_actions"
         )
-        model.compile(loss="mse", optimizer=Adam(0.005))
+        model.compile(loss="mse", optimizer=Adam(0.001))
 
         # return the constructed network architecture
         return model
@@ -682,11 +682,11 @@ class DDPGAgent:
         last_init = tf.keras.initializers.HeUniform()
 
         x = shared_layer(inputs)
-        x = Dense(16, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
-        x = Dense(16, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(64, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(64, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
 
         x = Dense(1, activation="tanh", kernel_initializer=last_init)(x)
-        x = Activation("tanh", name=action_name)(x)
+        # x = Activation("tanh", name=action_name)(x)
 
         # return the category prediction sub-network
         return x
@@ -700,15 +700,18 @@ class DDPGAgent:
         # Actions V and W. For more actions, we should add more layers
         action_input_v = layers.Input(shape=(1))
         action_out_v = layers.Dense(128, activation="relu")(action_input_v)
+        action_out_v = layers.Dense(128, activation="relu")(action_out_v)
 
         action_input_w = layers.Input(shape=(1))
-        action_out_w = layers.Dense(32, activation="relu")(action_input_w)
+        action_out_w = layers.Dense(128, activation="relu")(action_input_w)
+        action_out_w = layers.Dense(128, activation="relu")(action_out_w)
 
         # Both are passed through separate layer before concatenating
         concat = layers.Concatenate()([state_out, action_out_v, action_out_w])
 
         out = layers.Dense(256, activation="relu")(concat)
-        out = layers.Dense(256, activation="relu")(out)
+        out = layers.Dense(128, activation="relu")(out)
+        out = layers.Dense(64, activation="tanh")(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for given state-action

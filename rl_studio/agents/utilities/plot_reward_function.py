@@ -1,16 +1,22 @@
+import math
+
 import numpy as np
 import matplotlib.pyplot as plt
+
 
 def normalize_range(num, a, b):
     return (num - a) / (b - a)
 
+
 def linear_function(cross_x, slope, x):
     return cross_x + (slope * x)
+
 
 def sigmoid_function(start, end, x, slope=10):
     slope = slope / (end - start)
     sigmoid = 1 / (1 + np.exp(-slope * (x - ((start + end) / 2))))
     return sigmoid
+
 
 def reward_proximity(state):
     if abs(state) > 0.7:
@@ -33,6 +39,25 @@ def rewards_followline_velocity_center(v, pos, range_v):
 
     return reward
 
+
+def rewards_easy(v, pos):
+    if v < 1:
+        return -1
+
+    d_reward = math.pow(1 - abs(pos), 9)
+
+    # reward Max = 1 here
+
+    v_reward = v / 50
+    v_eff_reward = v_reward * d_reward
+
+    beta = 0.99
+    # TODO Ver que valores toma la velocity para compensarlo mejor
+    function_reward = beta * d_reward + (1 - beta) * v_eff_reward
+
+    return function_reward
+
+
 range_v = [0, 10]
 
 # Define the ranges for v, w, and pos
@@ -46,7 +71,8 @@ V, POS = np.meshgrid(v_range, pos_range)
 rewards = np.empty_like(V)
 for i in range(V.shape[0]):
     for j in range(V.shape[1]):
-            rewards[i, j] = rewards_followline_velocity_center(V[i, j], POS[i, j], range_v)
+        # rewards[i, j] = rewards_followline_velocity_center(V[i, j], POS[i, j], range_v)
+        rewards[i, j] = rewards_easy(V[i, j], POS[i, j])
 
 # Create a 3D plot
 fig = plt.figure(figsize=(10, 8))
