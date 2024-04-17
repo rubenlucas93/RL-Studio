@@ -2,6 +2,8 @@ import logging
 from datetime import datetime, timedelta
 import glob
 import time
+import pynvml
+import psutil
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -54,6 +56,7 @@ try:
 except IndexError:
     pass
 
+
 # Function to update scatter plot with new data
 def update_scatter_plot(ax, x, y, z, xlabel, ylabel, zlabel):
     ax.clear()
@@ -63,6 +66,15 @@ def update_scatter_plot(ax, x, y, z, xlabel, ylabel, zlabel):
     ax.set_zlabel(zlabel)
     plt.draw()
     plt.pause(0.001)
+
+
+def collect_usage():
+    cpu_usage = psutil.cpu_percent(interval=None)  # Get CPU usage percentage
+    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+    gpu_info = pynvml.nvmlDeviceGetUtilizationRates(handle)
+    gpu_usage = gpu_info.gpu
+    return cpu_usage, gpu_usage
+
 
 def combine_attributes(obj1, obj2, obj3):
     combined_dict = {}
@@ -84,6 +96,7 @@ def combine_attributes(obj1, obj2, obj3):
 
     return combined_dict
 
+
 class TrainerFollowLaneDDPGCarla:
     """
     Mode: training
@@ -95,6 +108,9 @@ class TrainerFollowLaneDDPGCarla:
     """
 
     def __init__(self, config):
+
+        pynvml.nvmlInit()
+
         self.actor_loss = 0
         self.critic_loss = 0
         self.algoritmhs_params = LoadAlgorithmParams(config)
@@ -124,7 +140,7 @@ class TrainerFollowLaneDDPGCarla:
 
         log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
         self.log = LoggingHandler(log_file)
-        #self.log.logger.basicConfig(filename=log_file, level=logging.INFO)
+        # self.log.logger.basicConfig(filename=log_file, level=logging.INFO)
 
         ## Load Carla server
         # CarlaEnv.__init__(self)
@@ -145,7 +161,10 @@ class TrainerFollowLaneDDPGCarla:
         self.all_steps_state0 = []
         self.all_steps_state11 = []
 
-        self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode !="inference" else 0
+        self.cpu_usages = 0
+        self.gpu_usages = 0
+
+        self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode != "inference" else 0
 
         # TODO This must come from config states in yaml
         state_size = len(self.environment.environment["x_row"]) + 2
@@ -173,7 +192,6 @@ class TrainerFollowLaneDDPGCarla:
         random.seed(1)
         np.random.seed(1)
         tf.compat.v1.random.set_random_seed(1)
-
 
     def save_if_best_epoch(self, episode, step, cumulated_reward):
         if self.current_max_reward <= cumulated_reward:
@@ -230,8 +248,8 @@ class TrainerFollowLaneDDPGCarla:
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
 
         action = self.ddpg_agent.policy(
-                    tf_prev_state, self.ou_noise, self.global_params.actions
-                )
+            tf_prev_state, self.ou_noise, self.global_params.actions
+        )
         self.tensorboard.update_actions(action, self.all_steps)
 
         state, reward, done, info = self.env.step(action)
@@ -242,8 +260,12 @@ class TrainerFollowLaneDDPGCarla:
             self.bad_perceptions += 1
         self.set_stats(info, prev_state)
 
+        if not self.all_steps % 3000:
+            self.cpu_usages, self.gpu_usages = collect_usage()
+
         if self.all_steps % self.global_params.steps_to_decrease == 0:
-            self.exploration = max(self.global_params.decrease_min, self.exploration - self.global_params.decrease_substraction)
+            self.exploration = max(self.global_params.decrease_min,
+                                   self.exploration - self.global_params.decrease_substraction)
             self.log.logger.info("decreasing exploration to ", self.exploration)
             self.ou_noise = OUActionNoise(
                 mean=np.zeros(1),
@@ -285,12 +307,16 @@ class TrainerFollowLaneDDPGCarla:
                 # best_episode_until_now=best_epoch,
                 # with_highest_reward=int(current_max_reward),
             )
-        if not self.all_steps % 10000:
-            # Update scatter plot
-            update_scatter_plot(self.ax1,  self.all_steps_velocity,  self.all_steps_state0, self.all_steps_reward, "Velocity", "State[0]", "Reward")
-            update_scatter_plot(self.ax2,  self.all_steps_velocity,  self.all_steps_state11, self.all_steps_reward, "Velocity", "State[9]", "Reward")
-            update_scatter_plot(self.ax3,  self.all_steps_steer,  self.all_steps_state0, self.all_steps_reward, "Steer", "State[0]", "Reward")
-            update_scatter_plot(self.ax4,  self.all_steps_steer,  self.all_steps_state11, self.all_steps_reward, "Steer", "State[9]", "Reward")
+        # if not self.all_steps % 10000:
+        #     # Update scatter plot
+        #     update_scatter_plot(self.ax1, self.all_steps_velocity, self.all_steps_state0, self.all_steps_reward,
+        #                         "Velocity", "State[0]", "Reward")
+        #     update_scatter_plot(self.ax2, self.all_steps_velocity, self.all_steps_state11, self.all_steps_reward,
+        #                         "Velocity", "State[9]", "Reward")
+        #     update_scatter_plot(self.ax3, self.all_steps_steer, self.all_steps_state0, self.all_steps_reward, "Steer",
+        #                         "State[0]", "Reward")
+        #     update_scatter_plot(self.ax4, self.all_steps_steer, self.all_steps_state11, self.all_steps_reward, "Steer",
+        #                         "State[9]", "Reward")
 
         if self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
             self.buffer.record((prev_state, action, reward, state))
@@ -335,10 +361,12 @@ class TrainerFollowLaneDDPGCarla:
             cumulated_reward = 0
             failures = 0
             step = 1
+            last_bad_perception = 0
 
             prev_state, _ = self.env.reset()
             while failures < 3:
-                state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state, cumulated_reward, done)
+                state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state,
+                                                                                        cumulated_reward, done)
                 if bad_perception:
                     last_bad_perception = step
                     self.log.logger.info("bad perception in step " + str(step))
@@ -370,7 +398,7 @@ class TrainerFollowLaneDDPGCarla:
         self.all_steps_velocity.append(info["velocity"])
         self.all_steps_steer.append(info["steering_angle"])
         self.all_steps_state0.append(prev_state[0])
-        self.all_steps_state11.append(prev_state[9])
+        self.all_steps_state11.append(prev_state[6])
 
         pass
 
@@ -381,8 +409,6 @@ class TrainerFollowLaneDDPGCarla:
         max_reward = np.max(self.episodes_reward)
         steering_std_dev = np.std(self.episodes_steer)
         advanced_meters = avg_speed * episode_time
-        avg_fps = np.mean(self.step_fps)
-        min_fps = np.min(self.step_fps)
         bad_perceptions_perc = self.bad_perceptions / step
         self.tensorboard.update_stats(
             std_dev=self.exploration,
@@ -396,11 +422,13 @@ class TrainerFollowLaneDDPGCarla:
             advanced_meters=advanced_meters,
             actor_loss=self.actor_loss,
             critic_loss=self.critic_loss,
-            min_fps=min_fps,
-            mean_fps=avg_fps,
             bad_perceptions_perc=bad_perceptions_perc,
-            since_last_bad_perception=since_last_perception
+            since_last_bad_perception=since_last_perception,
+            cpu=self.cpu_usages,
+            gpu=self.gpu_usages
         )
+        if self.global_params.mode == "inference":
+            self.tensorboard.update_fps(self.step_fps)
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_steer = []

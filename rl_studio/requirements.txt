@@ -40,3 +40,4 @@ protobuf
 rospkg==1.5.0
 torchvision
 prefetch_generator
+nvidia-ml-py3

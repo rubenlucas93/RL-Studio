@@ -135,16 +135,6 @@ class TrainerFollowLanePPOCarla:
                 f"steps = {step}\n"
             )
 
-    def save_if_completed(self, episode, step, cumulated_reward):
-        if step >= self.env_params.estimated_steps:
-        #    self.ppo_agent.save(
-        #        f"{self.global_params.models_dir}/"
-        #        f"{time.strftime('%Y%m%d-%H%M%S')}_LAPCOMPLETED"
-        #        f"MaxReward-{int(cumulated_reward)}_"
-        #        f"Epoch-{episode}")
-            return True
-        return False
-
     def log_and_plot_rewards(self, episode, step, cumulated_reward):
         # Showing stats in screen for monitoring. Showing every 'save_every_step' value
         if not self.all_steps % self.env_params.save_every_step:
@@ -165,15 +155,21 @@ class TrainerFollowLanePPOCarla:
                 f"current step = {step}\n"
             )
 
-    def one_step_iteration(self, episode, step, prev_state, cumulated_reward):
+    def one_step_iteration(self, episode, step, prev_state, cumulated_reward, bad_perception):
         self.all_steps += 1
+
+        # TODO ñapa para decelerar y no hacer giros bruscos cuando se pierda la percepción
+        if bad_perception:
+            action = [0, 0]
+            state, reward, done, info = self.env.step(action)
+            return state, cumulated_reward, done, info["bad_perception"]
 
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
 
         action = self.ppo_agent.select_action(tf_prev_state)
-        action[0] = action[0]  # TODO scale it propperly ( now between 0 and 1)
-        action[1] = action[1]  # TODO scale it propperly (now between -1 and 1)
+        action[0] = action[0]  # TODO scale it propperly (now between 0 and 1)
+        action[1] = action[1] - 1  # TODO scale it propperly (now between -0.5 and 0.5)
         self.tensorboard.update_actions(action, self.all_steps)
 
         state, reward, done, info = self.env.step(action)
@@ -183,7 +179,7 @@ class TrainerFollowLanePPOCarla:
         self.ppo_agent.buffer.is_terminals.append(done)
 
         # update PPO agent
-        if self.all_steps % self.algoritmhs_params.episodes_update == 0:
+        if self.all_steps % self.algoritmhs_params.episodes_update == 0 and self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
             self.loss, agent_weights = self.ppo_agent.update()
             self.tensorboard.update_weights(agent_weights, self.all_steps)
 
@@ -225,7 +221,7 @@ class TrainerFollowLanePPOCarla:
                 # best_episode_until_now=best_epoch,
                 # with_highest_reward=int(current_max_reward),
             )
-            return state, cumulated_reward, done
+        return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
         hyperparams = combine_attributes(self.algoritmhs_params,
@@ -257,19 +253,26 @@ class TrainerFollowLanePPOCarla:
         ):
             self.tensorboard.step = episode
             done = False
+            failures = 0
             cumulated_reward = 0
             step = 1
 
             prev_state, _ = self.env.reset()
             start_time = time.time()
-            while not done:
-                state, cumulated_reward, done = self.one_step_iteration(episode, step, prev_state, cumulated_reward)
+            while failures < 3:
+                state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state, cumulated_reward, done)
                 prev_state = state
                 step += 1
 
-                if not done:
-                    done = self.save_if_completed(episode, step, cumulated_reward)
+                # done = self.save_if_completed(episode, step, cumulated_reward)
+                if done:
+                    failures += 1
+                else:
+                    failures = 0
+
                 self.env.display_manager.render()
+                if step >= self.env_params.estimated_steps:
+                    break
             episode_time = time.time() - start_time
 
             self.save_if_best_epoch(episode, step, cumulated_reward)

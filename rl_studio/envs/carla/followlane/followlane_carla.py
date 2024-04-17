@@ -115,6 +115,8 @@ def choose_lane(distance_to_center_normalized, center_points):
 class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def __init__(self, **config):
 
+        self.show_images = False
+
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
         self.sync_mode = config["sync"]
@@ -228,8 +230,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.episode_start = time.time()
         self.car.apply_control(carla.VehicleControl(throttle=0.0, brake=0.0))
 
-        AutoCarlaUtils.show_image("image", self.front_camera_1_5.front_camera, 1)
-
+        # AutoCarlaUtils.show_image("image", self.front_camera_1_5.front_camera, 1)
+        # AutoCarlaUtils.show_image("bird_view", self.birds_eye_camera.front_camera, 1)
 
         raw_image = self.get_resized_image(self.front_camera_1_5.front_camera)
 
@@ -426,6 +428,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def step(self, action):
         # print(f"=============== STEP ===================")
 
+        # action = [0, 0]
         ### -------- send action
         params = self.control(action)
 
@@ -472,7 +475,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         #    distance_to_center_normalized,
         #    self.x_row,
         # )
-        AutoCarlaUtils.show_image("image", self.front_camera_1_5.front_camera, 1)
+        if self.show_images:
+            AutoCarlaUtils.show_image("image", self.front_camera_1_5.front_camera, 1)
+            AutoCarlaUtils.show_image("bird_view", self.birds_eye_camera.front_camera, 1)
 
         ## ------ calculate distance error and states
         # print(f"{self.perfect_distance_normalized =}"
@@ -486,13 +491,13 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         right_lane_normalized_distances.append(params["velocity"]/5)
         right_lane_normalized_distances.append(params["steering_angle"])
 
-        if self.sync_mode:
-            transform = self.car.get_transform()
-            spectator = self.world.get_spectator()
-            spectator_location = carla.Transform(
-                transform.location + carla.Location(z=100),
-                carla.Rotation(-90, transform.rotation.yaw, 0))
-            spectator.set_transform(spectator_location)
+        # if self.sync_mode:
+            # transform = self.car.get_transform()
+            # spectator = self.world.get_spectator()
+            # spectator_location = carla.Transform(
+            #     transform.location + carla.Location(z=100),
+            #     carla.Rotation(-90, transform.rotation.yaw, 0))
+            # spectator.set_transform(spectator_location)
 
         return np.array(right_lane_normalized_distances), reward, done, params
 
@@ -531,7 +536,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return function_reward
 
     def rewards_easy(self, distance_error, params):
-        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold)
+        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
+                                                       min_conf_states=len(distance_error)//2)
         params["d_reward"] = 0
         params["v_reward"] = 0
         params["v_eff_reward"] = 0
@@ -642,7 +648,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             ll_segment = cv2.convertScaleAbs(ll_segment)
             # Display the grayscale image
             processed = self.post_process(ll_segment)
-            lines = self.post_process_hough_yolop(processed)
+            lines = self.post_process_hough_lane_det(processed)
 
         detected_lines = self.merge_and_extend_lines(lines, ll_segment)
 
@@ -712,22 +718,63 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
         pts = np.array([[280, 200], [-50, 450], [630, 450], [440, 200]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
-        cv2.imshow("applied_mask", mask)
+        cv2.imshow("applied_mask", mask) if self.sync_mode and self.show_images else None
 
         # Step 2: Apply the mask to the original image
         ll_segment_masked = cv2.bitwise_and(ll_segment, mask)
         ll_segment_excluding_mask = cv2.bitwise_not(mask)
         # Apply the exclusion mask to ll_segment
         ll_segment_excluded = cv2.bitwise_and(ll_segment, ll_segment_excluding_mask)
-        cv2.imshow("discarded", ll_segment_excluded)
+        cv2.imshow("discarded", ll_segment_excluded) if self.sync_mode and self.show_images else None
 
         return ll_segment_masked
+
+
+    def post_process_hough_lane_det(self, ll_segment):
+        # Step 4: Perform Hough transform to detect lines
+        ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
+        ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
+        cv2.imshow("preprocess", ll_segment) if self.sync_mode and self.show_images else None
+        edges = cv2.Canny(ll_segment, 50, 100)
+
+        # Reapply HoughLines on the dilated image
+        lines = cv2.HoughLinesP(
+            edges,  # Input edge image
+            1,  # Distance resolution in pixels
+            np.pi / 90,  # Angle resolution in radians
+            threshold=10,  # Min number of votes for valid line
+            minLineLength=6,  # Min allowed length of line
+            maxLineGap=60  # Max allowed gap between line for joining them
+        )
+        # Sort lines by their length
+        # lines = sorted(lines, key=lambda x: x[0][0] * np.sin(x[0][1]), reverse=True)[:5]
+
+        # Create a blank image to draw lines
+        line_mask = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
+
+        # Iterate over points
+        for points in lines if lines is not None else []:
+            # Extracted points nested in the list
+            x1, y1, x2, y2 = points[0]
+            # Draw the lines joing the points
+            # On the original image
+            cv2.line(line_mask, (x1, y1), (x2, y2), (255, 255, 255), 2)
+
+        # Postprocess the detected lines
+        # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_OPEN)
+        # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_CLOSE)
+        # kernel = np.ones((3, 3), np.uint8)  # Adjust the size as needed
+        # eroded_image = cv2.erode(line_mask, kernel, iterations=1)
+        cv2.imshow("hough", line_mask) if self.sync_mode and self.show_images else None
+
+        return lines
+
 
     def post_process_hough_yolop(self, ll_segment):
         # Step 4: Perform Hough transform to detect lines
         ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
         ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
-        cv2.imshow("preprocess", ll_segment)
+        cv2.imshow("preprocess", ll_segment) if self.sync_mode and self.show_images else None
         lines = cv2.HoughLinesP(
             ll_segment,  # Input edge image
             1,  # Distance resolution in pixels
@@ -749,7 +796,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         edges = cv2.Canny(line_mask, 50, 100)
 
-        cv2.imshow("intermediate_hough", edges)
+        cv2.imshow("intermediate_hough", edges) if self.sync_mode and self.show_images else None
 
         # Reapply HoughLines on the dilated image
         lines = cv2.HoughLinesP(
@@ -779,7 +826,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_CLOSE)
         # kernel = np.ones((3, 3), np.uint8)  # Adjust the size as needed
         # eroded_image = cv2.erode(line_mask, kernel, iterations=1)
-        cv2.imshow("hough", line_mask)
+        cv2.imshow("hough", line_mask) if self.sync_mode and self.show_images else None
 
         return lines
 
@@ -807,7 +854,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         edges = cv2.Canny(line_mask, 50, 100)
 
-        cv2.imshow("intermediate_hough", edges)
+        cv2.imshow("intermediate_hough", edges) if self.sync_mode and self.show_images else None
 
         # Reapply HoughLines on the dilated image
         lines = cv2.HoughLinesP(
@@ -837,7 +884,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_CLOSE)
         # kernel = np.ones((3, 3), np.uint8)  # Adjust the size as needed
         # eroded_image = cv2.erode(line_mask, kernel, iterations=1)
-        cv2.imshow("hough", line_mask)
+        cv2.imshow("hough", line_mask) if self.sync_mode and self.show_images else None
 
         return lines
 
@@ -863,7 +910,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 extended_lines.append([(x1_extended, y1_extended, x2_extended, y2_extended)])
         return extended_lines
 
-    def end_if_conditions(self, distances_error, threshold=0.3, min_conf_states=7):
+    def end_if_conditions(self, distances_error, threshold=0.3, min_conf_states=2):
         done, states_above_threshold = self.has_bad_perception(distances_error, threshold, min_conf_states)
         if len(self.collision_hist) > 0:  # te has chocado, baby
             done = True
@@ -911,6 +958,26 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         ## --- Sensor collision
         self.setup_col_sensor()
+
+        self.birds_eye_camera = SensorManager(
+            self.world,
+            self.display_manager,
+            "RGBCamera",
+            carla.Transform(carla.Location(x=0, y=0, z=20), carla.Rotation(pitch=-90)),
+            self.car,
+            {},
+            display_pos=[0, 0],
+        )
+
+        self.front_camera_1_5 = SensorManager(
+            self.world,
+            self.display_manager,
+            "RGBCamera",
+            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+            self.car,
+            {},
+            display_pos=[0, 0],
+        )
 
         self.front_camera_1_5 = SensorManager(
             self.world,
@@ -974,7 +1041,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             cv2.line(merged_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
 
         # Display the original image with merged lines
-        cv2.imshow('Merged Lines', merged_image)
+        cv2.imshow('Merged Lines', merged_image) if self.sync_mode and self.show_images else None
 
         line_mask = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
 

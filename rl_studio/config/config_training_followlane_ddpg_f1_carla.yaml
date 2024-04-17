@@ -1,5 +1,5 @@
 settings:
-  mode: retraining # training, retraining, inference
+  mode: training # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
   algorithm: ddpg # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
@@ -7,7 +7,7 @@ settings:
   env: follow_lane # Town01, simple, nurburgring, montreal, curves, simple_laser, manual, autoparking
   agent: auto_carla # auto_carla, autoparkingRL, auto_carla, mountain_car, robot_mesh, cartpole, turtlebot
   actions: continuous # slow, fast
-  states: sp10 #image, sp1 (simplified perception with 1 point), sp3 (simplified perception with 3 points), spn (simplified perception with n points)
+  states: sp5 #image, sp1 (simplified perception with 1 point), sp3 (simplified perception with 3 points), spn (simplified perception with n points)
   rewards: followlane_center # followline_center, followline_center_v_w_linear
   framework: TensorFlow # TensorFlow, Pytorch
   total_episodes: 500000
@@ -18,14 +18,14 @@ settings:
   metrics_dir: "./metrics"
   debug_stats: false
   show_monitoring: false
-  steps_to_decrease: 20000
+  steps_to_decrease: 15000
   decrease_substraction: 0.005
-  decrease_min: 0.03
+  decrease_min: 0.005
   reward_params:
     function: pow
     punish_zig_zag_value: 1
     punish_ineffective_vel: 1
-    beta_1: 0.99
+    beta_1: 0.9
 
 ros:
   ros_master_uri: "11311"
@@ -33,7 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: 20240416-153008_IMPROVED_S-sp10_A-continuous_MR-203_E-7014
+    retrain_ddpg_tf_model_name: 20240417-204548_IMPROVED_S-sp5_A-continuous_MR-2073_E-3905
 
 inference:
   ddpg:
@@ -43,7 +43,7 @@ algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.5
+    std_dev: 0.015
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
@@ -72,7 +72,7 @@ states:
   sp3:
     0: [10, 50, 150]
   sp5:
-    0: [ 280, 290, 300, 310, 320 ]
+    0: [ 280, 320, 360, 400, 440 ]
   sp10:
     0: [270, 280, 290, 300, 310, 330, 370, 400, 430, 460]
   spn:
@@ -106,19 +106,19 @@ carla_environments:
     generation: "2"
     rolename: "hero" #name
     gamma: 2.2 #for camera
-    sync: true #syncronous mode or async
+    sync: false #syncronous mode or async
     detection_mode: lane_detector
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.5
+    reset_threshold: 0.3
     alternate_pose: false
     waypoints_meters: 5 #distance between waypoints in meters
-    waypoints_init: 6927 # 6927  1471
+    waypoints_init: 6927 # 6927  1471 899
     waypoints_target: 959 #961
     waypoints_lane_id: -1
     waypoints_road_id: 8
 
 carla:
   carla_server: localhost
-  carla_client: 4004
-  manager_port: 8010
+  carla_client: 4001
+  manager_port: 8011
