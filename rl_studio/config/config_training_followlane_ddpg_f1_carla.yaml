@@ -1,5 +1,5 @@
 settings:
-  mode: training # training, retraining, inference
+  mode: retraining # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
   algorithm: ddpg # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
@@ -43,7 +43,7 @@ algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.015
+    std_dev: 0.05
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
@@ -72,7 +72,7 @@ states:
   sp3:
     0: [10, 50, 150]
   sp5:
-    0: [ 280, 320, 360, 400, 440 ]
+    0: [ 380, 440, 480, 520, 560 ]
   sp10:
     0: [270, 280, 290, 300, 310, 330, 370, 400, 430, 460]
   spn:
@@ -106,12 +106,12 @@ carla_environments:
     generation: "2"
     rolename: "hero" #name
     gamma: 2.2 #for camera
-    sync: false #syncronous mode or async
-    detection_mode: lane_detector
+    sync: True #syncronous mode or async
+    detection_mode: yolop
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.3
-    alternate_pose: false
+    reset_threshold: 0.5
+    alternate_pose: True
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6927 # 6927  1471 899
     waypoints_target: 959 #961
@@ -120,5 +120,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 4001
+  carla_client: 4004
   manager_port: 8011

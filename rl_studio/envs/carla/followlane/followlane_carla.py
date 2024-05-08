@@ -1,4 +1,5 @@
 import os
+import weakref
 from collections import Counter
 import math
 import time
@@ -120,7 +121,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
         self.sync_mode = config["sync"]
-        self.reset_threshold = config["reset_threshold"]
+        self.reset_threshold = config["reset_threshold"] if self.sync_mode else 1
         self.detection_mode = config.get("detection_mode")
         if self.detection_mode == 'yolop':
             from rl_studio.envs.carla.utils.yolop.YOLOP import get_net
@@ -177,7 +178,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         ## -- display manager
         self.display_manager = DisplayManager(
-            grid_size=[2, 3],
+            grid_size=[1, 2],
             window_size=[1500, 800],
         )
 
@@ -451,7 +452,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # mask = self.preprocess_image(
         #    self.front_camera_1_5_red_mask.front_camera_red_mask
         # )
-        raw_image = self.get_resized_image(self.front_camera_1_5.front_camera)
+        raw_image = self.get_resized_image(self.front_camera_1_5.front_camera) # TODO Think it is not aligned with BM
 
         ll_segment = self.detect_lines(raw_image)
         (
@@ -475,9 +476,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         #    distance_to_center_normalized,
         #    self.x_row,
         # )
-        if self.show_images:
-            AutoCarlaUtils.show_image("image", self.front_camera_1_5.front_camera, 1)
-            AutoCarlaUtils.show_image("bird_view", self.birds_eye_camera.front_camera, 1)
 
         ## ------ calculate distance error and states
         # print(f"{self.perfect_distance_normalized =}"
@@ -550,7 +548,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         d_rewards = []
         for _, error in enumerate(distance_error):
-            d_rewards.append(math.pow(1 - error, 6))
+            d_rewards.append(math.pow(1 - error, 9))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(distance_error)
@@ -716,7 +714,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # Step 1: Create a binary mask image representing the trapeze
         mask = np.zeros_like(ll_segment)
         # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
-        pts = np.array([[280, 200], [-50, 450], [630, 450], [440, 200]], np.int32)
+        pts = np.array([[280, 300], [-50, 600], [630, 600], [440, 300]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
         cv2.imshow("applied_mask", mask) if self.sync_mode and self.show_images else None
 
@@ -732,18 +730,18 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def post_process_hough_lane_det(self, ll_segment):
         # Step 4: Perform Hough transform to detect lines
-        ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
-        ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
+        #ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
+        #ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
         cv2.imshow("preprocess", ll_segment) if self.sync_mode and self.show_images else None
-        edges = cv2.Canny(ll_segment, 50, 100)
+        #edges = cv2.Canny(ll_segment, 50, 100)
 
         # Reapply HoughLines on the dilated image
         lines = cv2.HoughLinesP(
-            edges,  # Input edge image
+            ll_segment,  # Input edge image
             1,  # Distance resolution in pixels
             np.pi / 90,  # Angle resolution in radians
-            threshold=10,  # Min number of votes for valid line
-            minLineLength=6,  # Min allowed length of line
+            threshold=7,  # Min number of votes for valid line
+            minLineLength=5,  # Min allowed length of line
             maxLineGap=60  # Max allowed gap between line for joining them
         )
         # Sort lines by their length
@@ -959,55 +957,61 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ## --- Sensor collision
         self.setup_col_sensor()
 
+        # Create a camera sensor blueprint
+        camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
+        camera_bp.set_attribute("image_size_x", "800")
+        camera_bp.set_attribute("image_size_y", "600")
+        camera_bp.set_attribute("fov", "90")
+
+        self.front_camera_1_5 = SensorManager(
+            self.world,
+            self.display_manager,
+            "RGBCamera",
+            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+            self.car,
+            {},
+            display_pos=[0, 0],
+        )
+
+        self.front_camera_1_5 = SensorManager(
+            self.world,
+            self.display_manager,
+            "RGBCamera",
+            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+            self.car,
+            {},
+            display_pos=[0, 0],
+        )
+
         self.birds_eye_camera = SensorManager(
             self.world,
             self.display_manager,
-            "RGBCamera",
-            carla.Transform(carla.Location(x=0, y=0, z=20), carla.Rotation(pitch=-90)),
-            self.car,
-            {},
-            display_pos=[0, 0],
-        )
-
-        self.front_camera_1_5 = SensorManager(
-            self.world,
-            self.display_manager,
-            "RGBCamera",
-            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
-            self.car,
-            {},
-            display_pos=[0, 0],
-        )
-
-        self.front_camera_1_5 = SensorManager(
-            self.world,
-            self.display_manager,
-            "RGBCamera",
-            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
-            self.car,
-            {},
-            display_pos=[0, 0],
-        )
-
-        self.front_camera_1_5_segmentated = SensorManager(
-            self.world,
-            self.display_manager,
-            "SemanticCamera",
-            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+            "BIRD_VIEW",
+            carla.Transform(carla.Location(x=0, y=0, z=60), carla.Rotation(pitch=-90)),
             self.car,
             {},
             display_pos=[0, 1],
         )
 
-        self.front_camera_1_5_red_mask = SensorManager(
-            self.world,
-            self.display_manager,
-            "RedMask",
-            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+0)),
-            self.car,
-            {},
-            display_pos=[0, 2],
-        )
+        # self.front_camera_1_5_segmentated = SensorManager(
+        #     self.world,
+        #     self.display_manager,
+        #     "SemanticCamera",
+        #     carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+        #     self.car,
+        #     {},
+        #     display_pos=[0, 1],
+        # )
+
+        # self.front_camera_1_5_red_mask = SensorManager(
+        #     self.world,
+        #     self.display_manager,
+        #     "RedMask",
+        #     carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+0)),
+        #     self.car,
+        #     {},
+        #     display_pos=[0, 2],
+        # )
 
     def merge_and_extend_lines(self, lines, ll_segment):
         # Merge parallel lines

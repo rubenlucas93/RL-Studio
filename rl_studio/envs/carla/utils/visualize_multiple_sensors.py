@@ -119,6 +119,7 @@ class SensorManager:
         self.tics_processing = 0
         self.display_man.add_sensor(self)
 
+        self.birdview = None
         self.front_camera = None
         self.front_camera_red_mask = None
         self.front_camera_bev = None
@@ -135,6 +136,22 @@ class SensorManager:
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
             camera.listen(self.save_rgb_image)
+
+            return camera
+        if sensor_type == "BIRD_VIEW":
+            camera_bird = self.world.get_blueprint_library().find("sensor.camera.rgb")
+            disp_size = self.display_man.get_display_size()
+            camera_bird.set_attribute("image_size_x", str(disp_size[0]))
+            camera_bird.set_attribute("image_size_y", str(disp_size[1]))
+
+            for key in sensor_options:
+                camera_bird.set_attribute(key, sensor_options[key])
+
+            transform = carla.Transform(carla.Location(x=0, y=0, z=60),
+                                        carla.Rotation(
+                                            pitch=-90))  # Looking down (bird's-eye view)                                    )
+            camera = self.world.spawn_actor(camera_bird, transform, attach_to=attached)
+            camera.listen(self.save_birdview)
 
             return camera
 
@@ -171,32 +188,6 @@ class SensorManager:
 
             return camera
 
-        elif sensor_type == "BirdEyeView":
-            # client = carla.Client("localhost", 2000)
-            # client.set_timeout(10.0)
-
-            self.birdview_producer = BirdViewProducer(
-                self.client,  # carla.Client
-                target_size=PixelDimensions(width=100, height=300),
-                pixels_per_meter=10,
-                crop_type=BirdViewCropType.FRONT_AREA_ONLY,
-            )
-
-            camera_bp = self.world.get_blueprint_library().find(
-                "sensor.camera.semantic_segmentation"
-            )
-            disp_size = self.display_man.get_display_size()
-            camera_bp.set_attribute("image_size_x", str(disp_size[0]))
-            camera_bp.set_attribute("image_size_y", str(disp_size[1]))
-
-            for key in sensor_options:
-                camera_bp.set_attribute(key, sensor_options[key])
-
-            camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
-            camera.listen(self.save_bev_image)
-
-            return camera
-
     def get_sensor(self):
         return self.sensor
 
@@ -217,6 +208,24 @@ class SensorManager:
         self.tics_processing += 1
 
         self.front_camera = array
+
+    def save_birdview(self, image):
+        t_start = self.timer.time()
+
+        image.convert(carla.ColorConverter.Raw)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+
+        if self.display_man.render_enabled():
+            self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+
+        t_end = self.timer.time()
+        self.time_processing += t_end - t_start
+        self.tics_processing += 1
+
+        self.birdview = array
 
     def save_semantic_image(self, image):
         t_start = self.timer.time()

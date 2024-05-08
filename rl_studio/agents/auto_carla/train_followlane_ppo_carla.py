@@ -8,6 +8,9 @@ from tqdm import tqdm
 from rl_studio.agents.utilities.plot_npy_dataset import plot_rewards
 from rl_studio.agents.utilities.push_git_repo import git_add_commit_push
 
+import pynvml
+import psutil
+
 from rl_studio.agents.f1.loaders import (
     LoadAlgorithmParams,
     LoadEnvParams,
@@ -63,6 +66,13 @@ def combine_attributes(obj1, obj2, obj3):
 
     return combined_dict
 
+def collect_usage():
+    cpu_usage = psutil.cpu_percent(interval=None)  # Get CPU usage percentage
+    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+    gpu_info = pynvml.nvmlDeviceGetUtilizationRates(handle)
+    gpu_usage = gpu_info.gpu
+    return cpu_usage, gpu_usage
+
 class TrainerFollowLanePPOCarla:
     """
     Mode: training
@@ -74,6 +84,8 @@ class TrainerFollowLanePPOCarla:
     """
 
     def __init__(self, config):
+        pynvml.nvmlInit()
+
         self.algoritmhs_params = LoadAlgorithmParams(config)
         self.env_params = LoadEnvParams(config)
         self.global_params = LoadGlobalParams(config)
@@ -81,6 +93,8 @@ class TrainerFollowLanePPOCarla:
         self.log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
         self.log = LoggingHandler(self.log_file)
         self.loss = 0
+        self.cpu_usages = 0
+        self.gpu_usages = 0
 
         self.tensorboard = ModifiedTensorBoard(
             log_dir=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -97,13 +111,15 @@ class TrainerFollowLanePPOCarla:
         self.env = gym.make(self.env_params.env_name, **self.environment.environment)
         self.all_steps = 0
         self.current_max_reward = 0
+        self.best_epoch = 0
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_v_reward = []
+        self.step_fps = []
         self.episodes_steer = []
         self.episodes_reward = []
 
-        std_init = self.algoritmhs_params.std_dev
+        std_init = self.algoritmhs_params.std_dev if self.global_params.mode != "inference" else 0.0001
         K_epochs = 5
 
         # TODO This must come from config states in yaml
@@ -118,9 +134,9 @@ class TrainerFollowLanePPOCarla:
 
 
     def save_if_best_epoch(self, episode, step, cumulated_reward):
-        if self.current_max_reward <= cumulated_reward:
+        if self.current_max_reward <= cumulated_reward or episode - 20 > self.best_epoch:
             self.current_max_reward = cumulated_reward
-            # best_epoch = episode
+            self.best_epoch = episode
 
             self.ppo_agent.save(
                 f"{self.global_params.models_dir}/"
@@ -169,12 +185,13 @@ class TrainerFollowLanePPOCarla:
 
         action = self.ppo_agent.select_action(tf_prev_state)
         action[0] = action[0]  # TODO scale it propperly (now between 0 and 1)
-        action[1] = action[1] - 1  # TODO scale it propperly (now between -0.5 and 0.5)
+        action[1] = action[1] - 0.5  # TODO scale it propperly (now between -0.5 and 0.5)
         self.tensorboard.update_actions(action, self.all_steps)
 
         state, reward, done, info = self.env.step(action)
         self.set_stats(info)
         fps = info["fps"]
+        self.step_fps.append(fps)
         self.ppo_agent.buffer.rewards.append(reward)
         self.ppo_agent.buffer.is_terminals.append(done)
 
@@ -182,6 +199,10 @@ class TrainerFollowLanePPOCarla:
         if self.all_steps % self.algoritmhs_params.episodes_update == 0 and self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
             self.loss, agent_weights = self.ppo_agent.update()
             self.tensorboard.update_weights(agent_weights, self.all_steps)
+
+        if not self.all_steps % 3000:
+            self.cpu_usages, self.gpu_usages = collect_usage()
+
 
         if self.all_steps % self.global_params.steps_to_decrease == 0:
             self.ppo_agent.decay_action_std(self.global_params.decrease_substraction,
@@ -231,7 +252,7 @@ class TrainerFollowLanePPOCarla:
         # best_epoch_training_time = 0
         # best_epoch = 1
 
-        if self.global_params.mode == "retraining":
+        if self.global_params.mode == "retraining" or self.global_params.mode == "inference":
             checkpoint = self.environment.environment["retrain_ppo_tf_model_name"]
             trained_agent=f"{self.global_params.models_dir}/{checkpoint}"
             self.ppo_agent.load(trained_agent)
@@ -264,7 +285,6 @@ class TrainerFollowLanePPOCarla:
                 prev_state = state
                 step += 1
 
-                # done = self.save_if_completed(episode, step, cumulated_reward)
                 if done:
                     failures += 1
                 else:
@@ -275,7 +295,8 @@ class TrainerFollowLanePPOCarla:
                     break
             episode_time = time.time() - start_time
 
-            self.save_if_best_epoch(episode, step, cumulated_reward)
+            if self.environment.environment["mode"] != "inference":
+                self.save_if_best_epoch(episode, step, cumulated_reward)
             self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward)
             self.env.destroy_all_actors()
             self.env.display_manager.destroy()
@@ -311,10 +332,14 @@ class TrainerFollowLanePPOCarla:
             steering_std_dev=steering_std_dev,
             advanced_meters=advanced_meters,
             actor_loss=self.loss if isinstance(self.loss, int) else self.loss.mean().cpu().detach().numpy(),
+            cpu=self.cpu_usages,
+            gpu=self.gpu_usages
         )
+        self.tensorboard.update_fps(self.step_fps)
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_v_reward = []
         self.episodes_steer = []
+        self.step_fps = []
         self.episodes_reward = []
 

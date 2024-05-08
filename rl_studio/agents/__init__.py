@@ -560,6 +560,17 @@ class InferencerFactory:
             )
 
             return TrainerFollowLaneDDPGCarla(config)
+        elif (
+            task == TasksType.FOLLOWLANECARLA.value
+            and agent == AgentsType.AUTOCARLA.value
+            and algorithm == AlgorithmsType.PPO_CONTINIUOUS.value
+            and simulator == EnvsType.CARLA.value
+        ):
+            from rl_studio.agents.auto_carla.train_followlane_ppo_carla import (
+                TrainerFollowLanePPOCarla,
+            )
+
+            return TrainerFollowLanePPOCarla(config)
 
         # =============================
         # CartPole

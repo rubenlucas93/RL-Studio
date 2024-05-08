@@ -427,8 +427,7 @@ class TrainerFollowLaneDDPGCarla:
             cpu=self.cpu_usages,
             gpu=self.gpu_usages
         )
-        if self.global_params.mode == "inference":
-            self.tensorboard.update_fps(self.step_fps)
+        self.tensorboard.update_fps(self.step_fps)
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_steer = []
