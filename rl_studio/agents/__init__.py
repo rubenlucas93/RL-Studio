@@ -158,6 +158,17 @@ class TrainerFactory:
             )
 
             return TrainerFollowLaneManualCarla(config)
+        elif (
+            task == TasksType.FOLLOWLANECARLA.value
+            and agent == AgentsType.AUTOCARLA.value
+            and algorithm == AlgorithmsType.AUTO.value
+            and simulator == EnvsType.CARLA.value
+        ):
+            from rl_studio.agents.auto_carla.train_followlane_auto_carla import (
+                TrainerFollowLaneAutoCarla,
+            )
+
+            return TrainerFollowLaneAutoCarla(config)
         # =============================
         # FollowLane - F1 - DDPG - Carla
         # =============================

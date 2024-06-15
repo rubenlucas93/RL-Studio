@@ -51,7 +51,7 @@ class Carla:
 
         elif (
             task == TasksType.FOLLOWLANECARLA.value
-            and algorithm == AlgorithmsType.MANUAL.value
+            and algorithm in [AlgorithmsType.MANUAL.value, AlgorithmsType.AUTO.value]
             and weather != "dynamic"
             and traffic_pedestrians is False
         ):

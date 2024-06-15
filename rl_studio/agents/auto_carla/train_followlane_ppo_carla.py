@@ -84,6 +84,8 @@ class TrainerFollowLanePPOCarla:
     """
 
     def __init__(self, config):
+        self.avg_speed = 0
+        self.advanced_meters = 0
         pynvml.nvmlInit()
 
         self.algoritmhs_params = LoadAlgorithmParams(config)
@@ -134,15 +136,18 @@ class TrainerFollowLanePPOCarla:
 
 
     def save_if_best_epoch(self, episode, step, cumulated_reward):
-        if self.current_max_reward <= cumulated_reward or episode - 20 > self.best_epoch:
+        if self.current_max_reward <= cumulated_reward:
             self.current_max_reward = cumulated_reward
             self.best_epoch = episode
 
             self.ppo_agent.save(
-                f"{self.global_params.models_dir}/"
-                f"{time.strftime('%Y%m%d-%H%M%S')}-IMPROVED"
+                f"{self.global_params.models_dir}/IMPROVED/"
+                f"{time.strftime('%Y%m%d-%H%M%S')}"
                 f"MaxReward-{int(cumulated_reward)}_"
-                f"Epoch-{episode}")
+                f"Epoch-{episode}_"
+                f"AM-{self.advanced_meters}_"
+                f"AS-{self.avg_speed}"
+            )
 
             self.log.logger.info(
                 f"\nsaving best lap\n"
@@ -150,7 +155,16 @@ class TrainerFollowLanePPOCarla:
                 f"current_max_reward = {cumulated_reward}\n"
                 f"steps = {step}\n"
             )
+        if episode - 100 > self.best_epoch:
+            self.best_epoch = episode
 
+            self.ppo_agent.save(
+                f"{self.global_params.models_dir}/BATCH/"
+                f"{time.strftime('%Y%m%d-%H%M%S')}"
+                f"MaxReward-{int(cumulated_reward)}_"
+                f"Epoch-{episode}_"
+                f"AM-{self.advanced_meters}_"
+                f"AS-{self.avg_speed}")
     def log_and_plot_rewards(self, episode, step, cumulated_reward):
         # Showing stats in screen for monitoring. Showing every 'save_every_step' value
         if not self.all_steps % self.env_params.save_every_step:
@@ -335,6 +349,8 @@ class TrainerFollowLanePPOCarla:
             cpu=self.cpu_usages,
             gpu=self.gpu_usages
         )
+        self.advanced_meters = advanced_meters
+        self.avg_speed = avg_speed
         self.tensorboard.update_fps(self.step_fps)
         self.episodes_speed = []
         self.episodes_d_reward = []

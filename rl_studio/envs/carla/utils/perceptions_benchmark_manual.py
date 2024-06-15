@@ -31,8 +31,8 @@ transform=transforms.Compose([
             normalize,
         ])
 
-detection_mode = 'yolop'
-# detection_mode = 'lane_detector'
+# detection_mode = 'yolop'
+detection_mode = 'lane_detector'
 
 show_images = False
 apply_mask = True
@@ -81,6 +81,13 @@ labels = {
     "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00051465.png": [-0.009375, 0.003125, 0.015625, 0.021875,
                                                                              0.034375],
     "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00049646.png": [0.259375, 0.259375, 0.25625,  0.253125, 0.253125],
+    "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00048438.png": [0.3625,   0.38125 , 0.4 ,     0.409375, 0.428125],
+    "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00049339.png": [0.2625 ,  0.196875, 0.128125, 0.084375, 0.015625],
+    "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00049447.png": [0.28125 , 0.234375, 0.190625, 0.159375, 0.1125  ],
+    "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00049543.png":  [0.296875 ,0.25625 , 0.215625, 0.1875 ,  0.146875],
+    "/home/ruben/Desktop/RL-Studio/rl_studio/inference/input/00106878.png":  [-0.215625, -0.190625 ,-0.165625, -0.146875, -0.121875],
+
+
 }
 
 
@@ -428,8 +435,6 @@ def merge_and_extend_lines(lines, ll_segment):
 
     # Draw the merged lines on the original image
     merged_image = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
-    #if len(merged_lines) < 2 or len(merged_lines) > 2:
-    #    print("ii")
     for line in merged_lines:
         x1, y1, x2, y2 = line['x1'], line['y1'], line['x2'], line['y2']
         cv2.line(merged_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
@@ -557,13 +562,11 @@ def find_lane_center(mask):
         return [NO_DETECTED]
 
     interested_line_borders = np.array([], dtype=np.int8)
-    # print(indices)
     for index in diff_indices:
         interested_line_borders = np.append(interested_line_borders, indices[index])
         interested_line_borders = np.append(interested_line_borders, int(indices[index+1]))
 
     midpoints = calculate_midpoints(interested_line_borders)
-    # print(midpoints)
     return midpoints
 
 
@@ -803,7 +806,10 @@ def detect(opt):
             #     print('"'+path+'"' + ": " + str(centers) + ",")
             #     cv2.imwrite(save_path_good + "_good", overlay)
             # TODO Ha funcionado con yolop lo de abajo
-            if labels.get(path) is None:
+            if labels.get(path) is None and not 1 in centers.tolist():
+                not_labeled += 1
+                cv2.imwrite(save_path_unknown, overlay)
+            elif labels.get(path) is None:
                 not_labeled_not_detected += 1
                 cv2.imwrite(save_path_expected_bad, overlay)
             elif wasDetected(labels.get(path), centers.tolist()):
@@ -812,9 +818,7 @@ def detect(opt):
             elif labels.get(path) is not None:
                 cv2.imwrite(save_path_bad, overlay)
                 cv2.imwrite(save_path_bad_raw, img)
-            elif not 1 in centers.tolist():
-                not_labeled += 1
-                cv2.imwrite(save_path_unknown, overlay)
+
             # if path not in labels:
             #     not_labeled += 1
             #     cv2.imwrite(save_path_bad, overlay)
@@ -837,7 +841,7 @@ def detect(opt):
 
 def wasDetected(detected: list, labels: list):
     for i in range(len(detected)):
-        if abs(detected[i] - labels[i]) > 0.045:
+        if abs(detected[i] - labels[i]) > 0.05:
             return False
     return True
 

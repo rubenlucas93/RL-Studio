@@ -14,6 +14,8 @@ from rl_studio.envs.carla.followlane.settings import FollowLaneCarlaConfig
 from rl_studio.envs.carla.followlane.utils import AutoCarlaUtils
 from PIL import Image
 from scipy.interpolate import interp1d
+from sklearn.linear_model import LinearRegression
+
 
 from rl_studio.envs.carla.utils.bounding_boxes import BasicSynchronousClient
 from rl_studio.envs.carla.utils.manual_control import CameraManager
@@ -113,10 +115,19 @@ def choose_lane(distance_to_center_normalized, center_points):
     return distances, centers
 
 
+def wasDetected(center_lanes):
+    for i in range(len(center_lanes)):
+        if abs(center_lanes[i]) > 0.1:
+            return False
+    return True
+
+
 class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def __init__(self, **config):
 
         self.show_images = False
+        self.show_all_points = False
+        self.debug_waypoints = config.get("debug_waypoints")
 
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
@@ -141,8 +152,12 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                                     map_location=self.device)
             self.yolop_model.load_state_dict(checkpoint['state_dict'])
             self.yolop_model = self.yolop_model.to(self.device)
-        elif self.detection_mode == "lane_detector":
+        elif self.detection_mode == "lane_detector_v2":
             self.lane_model = torch.load('envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth')
+            self.lane_model.eval()
+        elif self.detection_mode == "lane_detector":
+            self.lane_model = torch.load(
+                '/home/ruben/Desktop/RL-Studio/rl_studio/envs/carla/utils/lane_det/best_model_torch.pth')
             self.lane_model.eval()
         # self.display_manager = None
         # self.vehicle = None
@@ -178,7 +193,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         ## -- display manager
         self.display_manager = DisplayManager(
-            grid_size=[1, 2],
+            grid_size=[2, 3],
             window_size=[1500, 800],
         )
 
@@ -243,7 +258,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ) = self.calculate_center(ll_segment_post_process)
         right_lane_normalized_distances, right_center_lane = choose_lane(distance_to_center_normalized, center_lanes)
 
-        self.show_ll_seg_image(right_center_lane, ll_segment_post_process)
+        self.show_ll_seg_image(right_center_lane, ll_segment_post_process) if self.sync_mode and self.show_images else None
 
         state_size = len(distance_to_center_normalized)
         # right_lane_normalized_distances = [1,1,1,1,1,1,1,1,1,1]
@@ -353,29 +368,29 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         filtered_waypoints = []
         # i = init
         # for waypoint in spawn_points[init + 1: target + 2]:
-        i = 1
+        i = 0
         for waypoint in spawn_points:
             filtered_waypoints.append(waypoint)
             string = f"[{waypoint.road_id},{waypoint.lane_id},{i}]"
-            if waypoint.lane_id == lane_id:
-                if i != target:
-                    self.world.debug.draw_string(
-                        waypoint.transform.location,
-                        f"X - {string}",
-                        draw_shadow=False,
-                        color=carla.Color(r=0, g=255, b=0),
-                        life_time=life_time,
-                        persistent_lines=True,
-                    )
-                else:
-                    self.world.debug.draw_string(
-                        waypoint.transform.location,
-                        f"X - {string}",
-                        draw_shadow=False,
-                        color=carla.Color(r=255, g=0, b=0),
-                        life_time=life_time,
-                        persistent_lines=True,
-                    )
+            # if waypoint.lane_id == lane_id:
+            if i != target:
+                self.world.debug.draw_string(
+                    waypoint.transform.location,
+                    f"X - {string}",
+                    draw_shadow=False,
+                    color=carla.Color(r=0, g=255, b=0),
+                    life_time=life_time,
+                    persistent_lines=True,
+                )
+            else:
+                self.world.debug.draw_string(
+                    waypoint.transform.location,
+                    f"X - {string}",
+                    draw_shadow=False,
+                    color=carla.Color(r=255, g=0, b=0),
+                    life_time=life_time,
+                    persistent_lines=True,
+                )
             i += 1
 
         return filtered_waypoints
@@ -465,6 +480,24 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         right_lane_normalized_distances, right_center_lane = choose_lane(distance_to_center_normalized, center_lanes)
 
         self.show_ll_seg_image(right_center_lane, ll_segment)
+
+        if self.debug_waypoints:
+            average_abs = sum(abs(x) for x in right_lane_normalized_distances) / len(distance_to_center_normalized)
+            if average_abs > 0.8:
+                color = carla.Color(r=255, g=0, b=0)
+            else:
+                green_value = max(int((1 - average_abs * 2 ) * 255), 0 )
+                color = carla.Color(r=0, g=green_value, b=0)
+
+            self.world.debug.draw_string(
+                self.car.get_transform().location,
+                "X",
+                draw_shadow=False,
+                color=color,
+                life_time=10000000,
+                persistent_lines=True,
+            )
+
         # self.show_ll_seg_image(center_lanes, ll_segment_post_process, name="ll_seg_all")
 
         # print(f"states:{states}\n")
@@ -488,15 +521,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         right_lane_normalized_distances.append(params["velocity"]/5)
         right_lane_normalized_distances.append(params["steering_angle"])
-
-        # if self.sync_mode:
-            # transform = self.car.get_transform()
-            # spectator = self.world.get_spectator()
-            # spectator_location = carla.Transform(
-            #     transform.location + carla.Location(z=100),
-            #     carla.Rotation(-90, transform.rotation.yaw, 0))
-            # spectator.set_transform(spectator_location)
-
         return np.array(right_lane_normalized_distances), reward, done, params
 
     def control(self, action):
@@ -532,45 +556,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         function_reward -= 1 / (math.exp(params["steering_angle"]))
 
         return function_reward
-
-    def rewards_easy(self, distance_error, params):
-        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
-                                                       min_conf_states=len(distance_error)//2)
-        params["d_reward"] = 0
-        params["v_reward"] = 0
-        params["v_eff_reward"] = 0
-        params["reward"] = 0
-        if done:
-            return 0, done
-
-        if params["velocity"] < self.punish_ineffective_vel:
-            return 0, done
-
-        d_rewards = []
-        for _, error in enumerate(distance_error):
-            d_rewards.append(math.pow(1 - error, 9))
-
-        # TODO ignore non detected centers
-        d_reward = sum(d_rewards) / len(distance_error)
-        params["d_reward"] = d_reward
-
-        # reward Max = 1 here
-        punish = 0
-        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
-
-        v_reward = params["velocity"]/50
-        v_eff_reward = v_reward * d_reward
-        params["v_reward"] = v_reward
-        params["v_eff_reward"] = v_eff_reward
-
-        beta = self.beta
-        # TODO Ver que valores toma la velocity para compensarlo mejor
-        function_reward = beta * d_reward + (1-beta) * v_eff_reward
-        if function_reward > punish: # to avoid negative rewards
-            function_reward -= punish
-        params["reward"] = function_reward
-
-        return function_reward, done
 
     def rewards_followlane_center_v_w(self):
         """esta sin terminar"""
@@ -623,31 +608,34 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             # mask_image = cv2.bitWiseAnd(gray, mask_white)
             blur = cv2.GaussianBlur(gray, (5, 5), 0)
             ll_segment = cv2.Canny(blur, 50, 100)
-            cv2.imshow("raw", ll_segment)
+            cv2.imshow("raw", ll_segment) if self.sync_mode and self.show_images else None
             processed = self.post_process(ll_segment)
             lines = self.post_process_hough_programmatic(processed)
         elif self.detection_mode == 'yolop':
             with torch.no_grad():
                 ll_segment = (self.detect_yolop(raw_image) * 255).astype(np.uint8)
-            cv2.imshow("raw", ll_segment)
-            processed = self.post_process(ll_segment)
-            lines = self.post_process_hough_yolop(processed)
+            cv2.imshow("raw", ll_segment) if self.sync_mode and self.show_images else None
+            # processed = self.post_process(ll_segment)
+            lines = self.post_process_hough_yolop(ll_segment)
         else:
             with torch.no_grad():
                 ll_segment, left_mask, right_mask = self.detect_lane_detector(raw_image)[0]
             ll_segment = np.zeros_like(raw_image)
             ll_segment = self.lane_detection_overlay(ll_segment, left_mask, right_mask)
-            cv2.imshow("raw", ll_segment)
+            cv2.imshow("raw", ll_segment) if self.sync_mode and self.show_images else None
             # Extract blue and red channels
             blue_channel = ll_segment[:, :, 0]  # Blue channel
             red_channel = ll_segment[:, :, 2]  # Red channel
-            # Combine blue and red channels into a grayscale image
+
+            lines = []
+            left_line = self.post_process_hough_lane_det(blue_channel)
+            if left_line is not None:
+                lines.append([left_line])
+            right_line = self.post_process_hough_lane_det(red_channel)
+            if right_line is not None:
+                lines.append([right_line])
             ll_segment = 0.5 * blue_channel + 0.5 * red_channel
             ll_segment = cv2.convertScaleAbs(ll_segment)
-            # Display the grayscale image
-            processed = self.post_process(ll_segment)
-            lines = self.post_process_hough_lane_det(processed)
-
         detected_lines = self.merge_and_extend_lines(lines, ll_segment)
 
         # line_mask = morphological_process(line_mask, kernel_size=15, func_type=cv2.MORPH_CLOSE)
@@ -663,6 +651,47 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ll_segment = (ll_segment // 255).astype(np.uint8) # Keep the lower one-third of the image
 
         return ll_segment
+
+    def rewards_easy(self, distance_error, params):
+        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
+                                                       min_conf_states=len(distance_error)//2)
+        params["d_reward"] = 0
+        params["v_reward"] = 0
+        params["v_eff_reward"] = 0
+        params["reward"] = 0
+        if done:
+            return 0, done
+
+        if params["velocity"] < self.punish_ineffective_vel:
+            return 0, done
+
+        d_rewards = []
+        for _, error in enumerate(distance_error[2:]):
+            d_rewards.append(1 - error)
+
+        # TODO ignore non detected centers
+        d_reward = math.pow(sum(d_rewards), 4)
+        params["d_reward"] = d_reward
+
+        # reward Max = 1 here
+        punish = 0
+        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
+
+        v_reward = params["velocity"]/50
+        v_eff_reward = v_reward * d_reward
+        params["v_reward"] = v_reward
+        params["v_eff_reward"] = v_eff_reward
+
+        beta = self.beta
+        # TODO Ver que valores toma la velocity para compensarlo mejor
+        function_reward = beta * d_reward + (1-beta) * v_eff_reward
+        if function_reward > punish: # to avoid negative rewards
+            function_reward -= punish
+        else:
+            function_reward = 0
+        params["reward"] = function_reward
+
+        return function_reward, done
 
     def detect_yolop(self, raw_image):
         # Get names and colors
@@ -714,7 +743,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # Step 1: Create a binary mask image representing the trapeze
         mask = np.zeros_like(ll_segment)
         # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
-        pts = np.array([[280, 300], [-50, 600], [630, 600], [440, 300]], np.int32)
+        pts = np.array([[280, 200], [-50, 400], [630, 400], [440, 200]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
         cv2.imshow("applied_mask", mask) if self.sync_mode and self.show_images else None
 
@@ -729,43 +758,46 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
 
     def post_process_hough_lane_det(self, ll_segment):
-        # Step 4: Perform Hough transform to detect lines
-        #ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
-        #ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
-        cv2.imshow("preprocess", ll_segment) if self.sync_mode and self.show_images else None
-        #edges = cv2.Canny(ll_segment, 50, 100)
+        # ll_segment = cv2.dilate(ll_segment, (3, 3), iterations=4)
+        # ll_segment = cv2.erode(ll_segment, (3, 3), iterations=2)
+        cv2.imshow("preprocess", ll_segment) if self.show_images else None
+        # edges = cv2.Canny(ll_segment, 50, 100)
+        # Extract coordinates of non-zero points
+        nonzero_points = np.argwhere(ll_segment == 255)
+        if len(nonzero_points) == 0:
+            return None
 
-        # Reapply HoughLines on the dilated image
-        lines = cv2.HoughLinesP(
-            ll_segment,  # Input edge image
-            1,  # Distance resolution in pixels
-            np.pi / 90,  # Angle resolution in radians
-            threshold=7,  # Min number of votes for valid line
-            minLineLength=5,  # Min allowed length of line
-            maxLineGap=60  # Max allowed gap between line for joining them
-        )
-        # Sort lines by their length
-        # lines = sorted(lines, key=lambda x: x[0][0] * np.sin(x[0][1]), reverse=True)[:5]
+        # Extract x and y coordinates
+        x = nonzero_points[:, 1].reshape(-1, 1)  # Reshape for scikit-learn input
+        y = nonzero_points[:, 0]
 
-        # Create a blank image to draw lines
+        # Fit linear regression model
+        model = LinearRegression()
+        model.fit(x, y)
+
+        # Predict y values based on x
+        y_pred = model.predict(x)
+
         line_mask = np.zeros_like(ll_segment, dtype=np.uint8)  # Ensure dtype is uint8
 
-        # Iterate over points
-        for points in lines if lines is not None else []:
-            # Extracted points nested in the list
-            x1, y1, x2, y2 = points[0]
-            # Draw the lines joing the points
-            # On the original image
-            cv2.line(line_mask, (x1, y1), (x2, y2), (255, 255, 255), 2)
+        # Draw the linear regression line
+        for i in range(len(x)):
+            cv2.circle(line_mask, (x[i][0], int(y_pred[i])), 2, (255, 0, 0), -1)
 
-        # Postprocess the detected lines
-        # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_OPEN)
-        # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_CLOSE)
-        # kernel = np.ones((3, 3), np.uint8)  # Adjust the size as needed
-        # eroded_image = cv2.erode(line_mask, kernel, iterations=1)
-        cv2.imshow("hough", line_mask) if self.sync_mode and self.show_images else None
+        cv2.imshow("result", line_mask) if self.show_images else None
 
-        return lines
+        # Find the minimum and maximum x coordinates
+        min_x = np.min(x)
+        max_x = np.max(x)
+
+        # Find the corresponding predicted y-values for the minimum and maximum x coordinates
+        y1 = int(model.predict([[min_x]]))
+        y2 = int(model.predict([[max_x]]))
+
+        # Define the line segment
+        line_segment = (min_x, y1, max_x, y2)
+
+        return line_segment
 
 
     def post_process_hough_yolop(self, ll_segment):
@@ -918,18 +950,19 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def set_init_pose(self):
         ## ---  Car
         waypoints_town = self.world.get_map().generate_waypoints(5.0)
-        init_waypoint = waypoints_town[self.waypoints_init + 1]
+        init_waypoint = waypoints_town[self.waypoints_init]
 
         if self.alternate_pose:
             self.setup_car_random_pose()
         elif self.waypoints_init is not None:
-            # self.draw_waypoints(
-            #     waypoints_town,
-            #     self.waypoints_init,
-            #     self.waypoints_target,
-            #     self.waypoints_lane_id,
-            #     2000,
-            # )
+            if self.show_all_points:
+                self.draw_waypoints(
+                   waypoints_town,
+                   self.waypoints_init,
+                   self.waypoints_target,
+                   self.waypoints_lane_id,
+                   2000,
+                )
             self.setup_car_fix_pose(init_waypoint)
         else:  # TODO: hacer en el caso que se quiera poner el target con .next()
             waypoints_lane = init_waypoint.next_until_lane_end(1000)
@@ -973,16 +1006,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             display_pos=[0, 0],
         )
 
-        self.front_camera_1_5 = SensorManager(
-            self.world,
-            self.display_manager,
-            "RGBCamera",
-            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
-            self.car,
-            {},
-            display_pos=[0, 0],
-        )
-
         self.birds_eye_camera = SensorManager(
             self.world,
             self.display_manager,
@@ -990,7 +1013,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             carla.Transform(carla.Location(x=0, y=0, z=60), carla.Rotation(pitch=-90)),
             self.car,
             {},
-            display_pos=[0, 1],
+            display_pos=[1, 0],
         )
 
         # self.front_camera_1_5_segmentated = SensorManager(

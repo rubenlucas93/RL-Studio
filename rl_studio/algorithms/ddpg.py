@@ -530,16 +530,17 @@ class DDPGAgent:
         # Adding noise to action
         #print(f"debug: actions {sampled_actions[0]} {sampled_actions[1]}")
         sampled_actions = sampled_actions.numpy()
-        sampled_actions[0] = sampled_actions[0] + noise
-        sampled_actions[1] = sampled_actions[1] + noise
-        
-        legal_action_v = round(
-            np.clip(sampled_actions[0], self.V_LOWER_BOUND, self.V_UPPER_BOUND), 3
-        )
-        legal_action_w = round(
-            np.clip(sampled_actions[1], self.W_RIGHT_BOUND, self.W_LEFT_BOUND), 3
-        )
+        action_index = np.random.randint(0, len(sampled_actions))
+
+        sampled_actions[action_index] = sampled_actions[action_index] + noise
+
+        #print(f"debug: noise {noise}")
+        #print(f"debug: post actions {sampled_actions[0]} {sampled_actions[1]}")
+
+        legal_action_v = np.clip(sampled_actions[0], self.V_LOWER_BOUND, self.V_UPPER_BOUND)
+        legal_action_w = np.clip(sampled_actions[1], self.W_RIGHT_BOUND, self.W_LEFT_BOUND)
         legal_action = np.array([legal_action_v, legal_action_w])
+        # print(f"debug: final actions {sampled_actions[0]} {sampled_actions[1]}")
 
         return np.squeeze(legal_action)
 

@@ -148,6 +148,7 @@ class TrainerFollowLaneDDPGCarla:
         self.env = gym.make(self.env_params.env_name, **self.environment.environment)
         self.all_steps = 0
         self.current_max_reward = 0
+        self.best_epoch = 0
         self.episodes_speed = []
         self.episodes_d_reward = []
         self.episodes_steer = []
@@ -196,7 +197,7 @@ class TrainerFollowLaneDDPGCarla:
     def save_if_best_epoch(self, episode, step, cumulated_reward):
         if self.current_max_reward <= cumulated_reward:
             self.current_max_reward = cumulated_reward
-            # best_epoch = episode
+            self.best_epoch = episode
 
             save_actorcritic_model(
                 self.ddpg_agent,
@@ -213,6 +214,18 @@ class TrainerFollowLaneDDPGCarla:
                 f"in episode = {episode}\n"
                 f"current_max_reward = {cumulated_reward}\n"
                 f"steps = {step}\n"
+            )
+        if episode - 100 > self.best_epoch:
+            self.best_epoch = episode
+
+            save_actorcritic_model(
+                self.ddpg_agent,
+                self.global_params,
+                self.algoritmhs_params,
+                self.environment.environment,
+                self.current_max_reward,
+                episode,
+                "BATCH",
             )
 
     def log_and_plot_rewards(self, episode, step, cumulated_reward):
@@ -239,10 +252,10 @@ class TrainerFollowLaneDDPGCarla:
         self.all_steps += 1
 
         # TODO ñapa para decelerar y no hacer giros bruscos cuando se pierda la percepción
-        if bad_perception:
-            action = [0, 0]
-            state, reward, done, info = self.env.step(action)
-            return state, cumulated_reward, done, info["bad_perception"]
+        #if bad_perception:
+        #    action = [0, 0]
+        #    state, reward, done, info = self.env.step(action)
+        #    return state, cumulated_reward, done, info["bad_perception"]
 
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
@@ -364,7 +377,7 @@ class TrainerFollowLaneDDPGCarla:
             last_bad_perception = 0
 
             prev_state, _ = self.env.reset()
-            while failures < 3:
+            while failures < 4:
                 state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state,
                                                                                         cumulated_reward, done)
                 if bad_perception:

@@ -12,3 +12,4 @@ class AlgorithmsType(Enum):
     PPO = "ppo"
     PPO_CONTINIUOUS = 'ppo_continuous'
     MANUAL = "manual"
+    AUTO = "auto"
