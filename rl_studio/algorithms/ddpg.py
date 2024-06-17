@@ -530,9 +530,10 @@ class DDPGAgent:
         # Adding noise to action
         #print(f"debug: actions {sampled_actions[0]} {sampled_actions[1]}")
         sampled_actions = sampled_actions.numpy()
-        action_index = np.random.randint(0, len(sampled_actions))
+        #action_index = np.random.randint(0, len(sampled_actions))
 
-        sampled_actions[action_index] = sampled_actions[action_index] + noise
+        sampled_actions[0] = sampled_actions[0] + noise
+        sampled_actions[1] = sampled_actions[1] + noise
 
         #print(f"debug: noise {noise}")
         #print(f"debug: post actions {sampled_actions[0]} {sampled_actions[1]}")

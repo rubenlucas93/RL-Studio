@@ -557,6 +557,47 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         return function_reward
 
+    def rewards_easy(self, distance_error, params):
+        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
+                                                       min_conf_states=len(distance_error)//2)
+        params["d_reward"] = 0
+        params["v_reward"] = 0
+        params["v_eff_reward"] = 0
+        params["reward"] = 0
+        if done:
+            return 0, done
+
+        if params["velocity"] < self.punish_ineffective_vel:
+            return 0, done
+
+        d_rewards = []
+        for _, error in enumerate(distance_error):
+            d_rewards.append(math.pow(1 - error, 7))
+
+        # TODO ignore non detected centers
+        d_reward = sum(d_rewards) / len(d_rewards)
+        params["d_reward"] = d_reward
+
+        # reward Max = 1 here
+        punish = 0
+        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
+
+        v_reward = params["velocity"]/50
+        v_eff_reward = v_reward * d_reward
+        params["v_reward"] = v_reward
+        params["v_eff_reward"] = v_eff_reward
+
+        beta = self.beta
+        # TODO Ver que valores toma la velocity para compensarlo mejor
+        function_reward = beta * d_reward + (1-beta) * v_eff_reward
+        if function_reward > punish: # to avoid negative rewards
+            function_reward -= punish
+        else:
+            function_reward = 0
+        params["reward"] = function_reward
+
+        return function_reward, done
+
     def rewards_followlane_center_v_w(self):
         """esta sin terminar"""
         center = 0
@@ -651,47 +692,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ll_segment = (ll_segment // 255).astype(np.uint8) # Keep the lower one-third of the image
 
         return ll_segment
-
-    def rewards_easy(self, distance_error, params):
-        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
-                                                       min_conf_states=len(distance_error)//2)
-        params["d_reward"] = 0
-        params["v_reward"] = 0
-        params["v_eff_reward"] = 0
-        params["reward"] = 0
-        if done:
-            return 0, done
-
-        if params["velocity"] < self.punish_ineffective_vel:
-            return 0, done
-
-        d_rewards = []
-        for _, error in enumerate(distance_error[2:]):
-            d_rewards.append(1 - error)
-
-        # TODO ignore non detected centers
-        d_reward = math.pow(sum(d_rewards), 4)
-        params["d_reward"] = d_reward
-
-        # reward Max = 1 here
-        punish = 0
-        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
-
-        v_reward = params["velocity"]/50
-        v_eff_reward = v_reward * d_reward
-        params["v_reward"] = v_reward
-        params["v_eff_reward"] = v_eff_reward
-
-        beta = self.beta
-        # TODO Ver que valores toma la velocity para compensarlo mejor
-        function_reward = beta * d_reward + (1-beta) * v_eff_reward
-        if function_reward > punish: # to avoid negative rewards
-            function_reward -= punish
-        else:
-            function_reward = 0
-        params["reward"] = function_reward
-
-        return function_reward, done
 
     def detect_yolop(self, raw_image):
         # Get names and colors

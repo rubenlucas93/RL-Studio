@@ -18,14 +18,14 @@ settings:
   metrics_dir: "./metrics"
   debug_stats: false
   show_monitoring: false
-  steps_to_decrease: 5000
+  steps_to_decrease: 10000
   decrease_substraction: 0.005
   decrease_min: 0.005
   reward_params:
     function: pow
-    punish_zig_zag_value: 0.1
+    punish_zig_zag_value: 0.5
     punish_ineffective_vel: 1
-    beta_1: 0.85
+    beta_1: 0.9
 
 ros:
   ros_master_uri: "11311"
@@ -33,7 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: IMPROVED/20240613-011923S-sp5_A-continuous_MR-2123_E-189
+    retrain_ddpg_tf_model_name: IMPROVED/20240615-113834S-sp5_A-continuous_MR-396121_E-7
 
 inference:
   ddpg:
@@ -42,13 +42,13 @@ inference:
 algorithm:
   ddpg:
     gamma: 0.9
-    tau: 0.002
-    std_dev: 0.1
+    tau: 0.005
+    std_dev: 0.08
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
-    critic_lr: 0.003
-    actor_lr: 0.002
+    critic_lr: 0.0008
+    actor_lr: 0.0006
     buffer_capacity: 100_000
     batch_size: 120
 
@@ -80,7 +80,7 @@ states:
 
 actions:
   continuous:
-    v: [0, 1]
+    v: [0, 0.8]
     w: [-0.5, 0.5]
 
 
@@ -110,7 +110,7 @@ carla_environments:
     detection_mode: lane_detector
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.25
+    reset_threshold: 0.4
     alternate_pose: false
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6912 # {6912} 1471 6927 899 6294    waypoints_target: 959 #961

@@ -4,12 +4,13 @@ import time
 
 import gymnasium as gym
 import tensorflow as tf
+import matplotlib.pyplot as plt
+
 from tqdm import tqdm
 from rl_studio.agents.utilities.plot_npy_dataset import plot_rewards
 from rl_studio.agents.utilities.push_git_repo import git_add_commit_push
 from rl_studio.envs.carla.utils.navigation.basic_agent import BasicAgent
 from rl_studio.envs.carla.utils.navigation.behavior_agent import BehaviorAgent
-
 from rl_studio.agents.f1.loaders import (
     LoadAlgorithmParams,
     LoadEnvParams,
@@ -65,6 +66,17 @@ def combine_attributes(obj1, obj2, obj3):
 
     return combined_dict
 
+
+# Function to update scatter plot with new data
+def update_scatter_plot(ax, x, y, z, xlabel, ylabel, zlabel):
+    ax.clear()
+    ax.scatter(x, y, z)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_zlabel(zlabel)
+    plt.draw()
+    plt.pause(0.001)
+
 class TrainerFollowLaneAutoCarla:
     """
     Mode: training
@@ -116,37 +128,77 @@ class TrainerFollowLaneAutoCarla:
         self.all_steps_velocity = []
         self.all_steps_steer = []
         self.all_steps_state0 = []
-        self.all_steps_state11 = []
+        self.all_steps_state1 = []
+        self.all_steps_state2 = []
+        self.all_steps_state3 = []
+        self.all_steps_state4 = []
 
         self.cpu_usages = 0
         self.gpu_usages = 0
+
+        # Initialize the scatter plots
+        fig = plt.figure(figsize=(12, 10))
+        self.ax1 = fig.add_subplot(221, projection='3d')
+        self.ax2 = fig.add_subplot(222, projection='3d')
+        self.ax3 = fig.add_subplot(223, projection='3d')
+        self.ax4 = fig.add_subplot(224, projection='3d')
+        self.ax5 = fig.add_subplot(225, projection='3d')
+        self.ax6 = fig.add_subplot(226, projection='3d')
 
         random.seed(1)
         np.random.seed(1)
         tf.compat.v1.random.set_random_seed(1)
 
 
-    def send_and_store_metrics(self, episode, loss, start_time_epoch):
-        if not episode % self.env_params.save_episodes:
-            average_reward = sum(self.global_params.ep_rewards[-self.env_params.save_episodes:]) / len(
-                self.global_params.ep_rewards[-self.env_params.save_episodes:]
-            )
-            min_reward = min(self.global_params.ep_rewards[-self.env_params.save_episodes:])
-            max_reward = max(self.global_params.ep_rewards[-self.env_params.save_episodes:])
-            self.tensorboard.update_stats(
-                cum_rewards=average_reward,
-                reward_min=min_reward,
-                reward_max=max_reward,
-                actor_loss=loss if isinstance(loss, int) else loss.mean().detach().numpy(),
-            )
+    def calculate_and_report_episode_stats(self, episode_time, step, cumulated_reward):
+        avg_speed = np.mean(self.episodes_speed)
+        max_speed = np.max(self.episodes_speed)
+        cum_d_reward = np.sum(self.episodes_d_reward)
+        max_reward = np.max(self.episodes_reward)
+        steering_std_dev = np.std(self.episodes_steer)
+        advanced_meters = avg_speed * episode_time
+        bad_perceptions_perc = self.bad_perceptions / step
+        self.tensorboard.update_stats(
+            std_dev=self.exploration,
+            steps_episode=step,
+            cum_rewards=cumulated_reward,
+            avg_speed=avg_speed,
+            max_speed=max_speed,
+            cum_d_reward=cum_d_reward,
+            max_reward=max_reward,
+            steering_std_dev=steering_std_dev,
+            advanced_meters=advanced_meters,
+            actor_loss=self.actor_loss,
+            critic_loss=self.critic_loss,
+            bad_perceptions_perc=bad_perceptions_perc,
+            cpu=self.cpu_usages,
+            gpu=self.gpu_usages
+        )
+        self.tensorboard.update_fps(self.step_fps)
+        self.episodes_speed = []
+        self.episodes_d_reward = []
+        self.episodes_steer = []
+        self.episodes_reward = []
+        self.step_fps = []
+        self.bad_perceptions = 0
 
-            self.global_params.aggr_ep_rewards["episode"].append(episode)
-            self.global_params.aggr_ep_rewards["avg"].append(average_reward)
-            self.global_params.aggr_ep_rewards["max"].append(max_reward)
-            self.global_params.aggr_ep_rewards["min"].append(min_reward)
-            self.global_params.aggr_ep_rewards["epoch_training_time"].append(
-                (datetime.now() - start_time_epoch).total_seconds()
-            )
+
+    def set_stats(self, info, prev_state):
+        self.episodes_speed.append(info["velocity"])
+        self.episodes_steer.append(info["steering_angle"])
+        self.episodes_d_reward.append(info["d_reward"])
+        self.episodes_reward.append(info["reward"])
+
+        self.all_steps_reward.append(info["reward"])
+        self.all_steps_velocity.append(info["velocity"])
+        self.all_steps_steer.append(info["steering_angle"])
+        self.all_steps_state0.append(prev_state[0])
+        self.all_steps_state1.append(prev_state[0])
+        self.all_steps_state2.append(prev_state[0])
+        self.all_steps_state3.append(prev_state[0])
+        self.all_steps_state4.append(prev_state[4])
+
+        pass
     def log_and_plot_rewards(self, episode, step, cumulated_reward):
         # Showing stats in screen for monitoring. Showing every 'save_every_step' value
         if not self.all_steps % self.env_params.save_every_step:
@@ -177,6 +229,7 @@ class TrainerFollowLaneAutoCarla:
         # reversed_v = -action[0]
         # reversed_w = -action[1]
         # state, reward, done, info = self.env.step([reversed_v, reversed_w])
+        self.set_stats(info, prev_state)
 
         if self.global_params.show_monitoring:
             render_params(
@@ -193,6 +246,20 @@ class TrainerFollowLaneAutoCarla:
                 # best_episode_until_now=best_epoch,
                 # with_highest_reward=int(current_max_reward),
             )
+            # Update scatter plot
+            update_scatter_plot(self.ax1, self.all_steps_velocity, self.all_steps_state0, self.all_steps_reward,
+                                "Velocity", "State[0]", "Reward")
+            update_scatter_plot(self.ax2, self.all_steps_velocity, self.all_steps_state1, self.all_steps_reward,
+                                "Velocity", "State[9]", "Reward")
+            update_scatter_plot(self.ax3, self.all_steps_velocity, self.all_steps_state2, self.all_steps_reward, "Steer",
+                                "State[0]", "Reward")
+            update_scatter_plot(self.ax4, self.all_steps_velocity, self.all_steps_state3, self.all_steps_reward, "Steer",
+                                "State[9]", "Reward")
+            update_scatter_plot(self.ax5, self.all_steps_velocity, self.all_steps_state4, self.all_steps_reward, "Steer",
+                                "State[9]", "Reward")
+            update_scatter_plot(self.ax6, self.all_steps_steer, self.all_steps_state0, self.all_steps_reward, "Steer",
+                                "State[9]", "Reward")
+
         return state, cumulated_reward, done, 0
 
     def main(self):
@@ -244,7 +311,8 @@ class TrainerFollowLaneAutoCarla:
 
                 # self.log_and_plot_rewards(episode, step, cumulated_reward)
                 self.env.display_manager.render()
-
+            episode_time = step * self.environment.environment["fixed_delta_seconds"]
+            self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward)
             self.env.destroy_all_actors()
             self.env.display_manager.destroy()
 
