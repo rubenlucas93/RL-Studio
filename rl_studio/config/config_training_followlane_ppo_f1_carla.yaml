@@ -20,7 +20,7 @@ settings:
   show_monitoring: false
   steps_to_decrease: 20000
   decrease_substraction: 0.005
-  decrease_min: 0.01
+  decrease_min: 0.005
   reward_params:
     function: pow
     punish_zig_zag_value: 0.5
@@ -34,7 +34,7 @@ ros:
 
 retraining:
   ppo:
-    retrain_ppo_tf_model_name: IMPROVED/20240603-212457MaxReward-2454_Epoch-98_AM-434.1629130568324_AS-4.981970093125234
+    retrain_ppo_tf_model_name: IMPROVED/20240622-074253MaxReward-72_Epoch-3347_AM-29.652515859790565_AS-7.154911915037293
 inference:
   ppo:
     inference_ppo_tf_actor_model_name:
@@ -72,7 +72,7 @@ states:
   sp3:
     0: [10, 50, 150]
   sp5:
-    0: [ 320, 340, 370, 390, 420 ]
+    0: [ 280, 340, 380, 420, 460 ]
   sp10:
     0: [370, 380, 390, 400, 410, 430, 470, 500, 530, 560]
   spn:
@@ -106,7 +106,7 @@ carla_environments:
     traffic_pedestrians: False
     city_lights: False
     car_lights: False
-    estimated_steps: 100000
+    estimated_steps: 8000
     save_episodes: 5 # not used in this carla ppo
     save_every_step: 100 # not used in this carla ppo
     init_pose:
@@ -119,8 +119,19 @@ carla_environments:
     detection_mode: lane_detector
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.3
+    reset_threshold: 0.25
     alternate_pose: True
+    spawn_points: [
+#      [-397.733826, 9.278170, 1.006042, 0.041077, 179.631531, 0.000000],
+#      [-129.059906, 420.335602, 1.006582, -0.054409, -19.703402, 0.064227],
+#      [12.915828, 201.878281, 1.006114, -0.107630, -89.559113, -0.003174],
+#      [-442.993164, 11.886087, 1.008324, 0.143653, 167.103622, 0.532254],
+#      [-338.486603, 431.517761, 1.008051, 0.111756, 5.390700, 0.180541],
+      [ -475.906342, 352.208710, 1.007515, 0.051254, 54.662395, 0.072115 ],
+      [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 0.006703],
+      [384.381470, -47.060329, 1.007339, 0.031453, 90.310402, 0.008101],
+      [195.221252, -367.893829, 1.009260, 0.248796, 0.152361, -0.002625]
+    ]
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6912 # {6912} 6927 1471
     waypoints_target: 959 #961

@@ -694,8 +694,9 @@ class DDPGAgent:
         last_init = tf.keras.initializers.HeUniform()
 
         x = shared_layer(inputs)
-        x = Dense(64, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
-        x = Dense(64, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
+        x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
 
         x = Dense(1, activation="tanh", kernel_initializer=last_init)(x)
         # x = Activation("tanh", name=action_name)(x)
@@ -711,19 +712,19 @@ class DDPGAgent:
 
         # Actions V and W. For more actions, we should add more layers
         action_input_v = layers.Input(shape=(1))
-        action_out_v = layers.Dense(128, activation="relu")(action_input_v)
-        action_out_v = layers.Dense(128, activation="relu")(action_out_v)
+        action_out_v = layers.Dense(64, activation="relu")(action_input_v)
+        action_out_v = layers.Dense(64, activation="relu")(action_out_v)
 
         action_input_w = layers.Input(shape=(1))
-        action_out_w = layers.Dense(128, activation="relu")(action_input_w)
-        action_out_w = layers.Dense(128, activation="relu")(action_out_w)
+        action_out_w = layers.Dense(64, activation="relu")(action_input_w)
+        action_out_w = layers.Dense(64, activation="relu")(action_out_w)
 
         # Both are passed through separate layer before concatenating
         concat = layers.Concatenate()([state_out, action_out_v, action_out_w])
 
-        out = layers.Dense(256, activation="relu")(concat)
+        out = layers.Dense(128, activation="relu")(concat)
         out = layers.Dense(128, activation="relu")(out)
-        out = layers.Dense(64, activation="tanh")(out)
+        out = layers.Dense(128, activation="tanh")(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for given state-action

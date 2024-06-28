@@ -138,12 +138,12 @@ class TrainerFollowLaneAutoCarla:
 
         # Initialize the scatter plots
         fig = plt.figure(figsize=(12, 10))
-        self.ax1 = fig.add_subplot(221, projection='3d')
-        self.ax2 = fig.add_subplot(222, projection='3d')
-        self.ax3 = fig.add_subplot(223, projection='3d')
-        self.ax4 = fig.add_subplot(224, projection='3d')
-        self.ax5 = fig.add_subplot(225, projection='3d')
-        self.ax6 = fig.add_subplot(226, projection='3d')
+        self.ax1 = fig.add_subplot(321, projection='3d')
+        self.ax2 = fig.add_subplot(322, projection='3d')
+        self.ax3 = fig.add_subplot(323, projection='3d')
+        self.ax4 = fig.add_subplot(324, projection='3d')
+        self.ax5 = fig.add_subplot(325, projection='3d')
+        self.ax6 = fig.add_subplot(326, projection='3d')
 
         random.seed(1)
         np.random.seed(1)
@@ -159,7 +159,6 @@ class TrainerFollowLaneAutoCarla:
         advanced_meters = avg_speed * episode_time
         bad_perceptions_perc = self.bad_perceptions / step
         self.tensorboard.update_stats(
-            std_dev=self.exploration,
             steps_episode=step,
             cum_rewards=cumulated_reward,
             avg_speed=avg_speed,
@@ -250,15 +249,15 @@ class TrainerFollowLaneAutoCarla:
             update_scatter_plot(self.ax1, self.all_steps_velocity, self.all_steps_state0, self.all_steps_reward,
                                 "Velocity", "State[0]", "Reward")
             update_scatter_plot(self.ax2, self.all_steps_velocity, self.all_steps_state1, self.all_steps_reward,
-                                "Velocity", "State[9]", "Reward")
-            update_scatter_plot(self.ax3, self.all_steps_velocity, self.all_steps_state2, self.all_steps_reward, "Steer",
-                                "State[0]", "Reward")
-            update_scatter_plot(self.ax4, self.all_steps_velocity, self.all_steps_state3, self.all_steps_reward, "Steer",
-                                "State[9]", "Reward")
-            update_scatter_plot(self.ax5, self.all_steps_velocity, self.all_steps_state4, self.all_steps_reward, "Steer",
-                                "State[9]", "Reward")
+                                "Velocity", "State[1]", "Reward")
+            update_scatter_plot(self.ax3, self.all_steps_velocity, self.all_steps_state2, self.all_steps_reward, "Velocity",
+                                "State[2]", "Reward")
+            update_scatter_plot(self.ax4, self.all_steps_velocity, self.all_steps_state3, self.all_steps_reward, "Velocity",
+                                "State[3]", "Reward")
+            update_scatter_plot(self.ax5, self.all_steps_velocity, self.all_steps_state4, self.all_steps_reward, "Velocity",
+                                "State[4]", "Reward")
             update_scatter_plot(self.ax6, self.all_steps_steer, self.all_steps_state0, self.all_steps_reward, "Steer",
-                                "State[9]", "Reward")
+                                "State[0]", "Reward")
 
         return state, cumulated_reward, done, 0
 
@@ -271,10 +270,6 @@ class TrainerFollowLaneAutoCarla:
         # best_epoch_training_time = 0
         # best_epoch = 1
 
-        if self.global_params.mode == "retraining":
-            checkpoint = self.environment.environment["retrain_ppo_tf_model_name"]
-            trained_agent=f"{self.global_params.models_dir}/{checkpoint}"
-            self.ppo_agent.load(trained_agent)
 
         self.log.logger.info(
             f"\nstates = {self.global_params.states}\n"
@@ -288,8 +283,8 @@ class TrainerFollowLaneAutoCarla:
         )
 
         prev_state, _ = self.env.reset()
-        self.agent = BasicAgent(self.env.car)
-        # self.agent = BehaviorAgent(self.env.car, behavior="normal")
+        # self.agent = BasicAgent(self.env.car)
+        self.agent = BehaviorAgent(self.env.car, behavior="normal")
 
         ## -------------    START TRAINING --------------------
         for episode in tqdm(
@@ -303,6 +298,7 @@ class TrainerFollowLaneAutoCarla:
 
             if episode != 1:
                 prev_state, _ = self.env.reset()
+                self.agent = BehaviorAgent(self.env.car, behavior="normal")
 
             while not done:
                 state, cumulated_reward, done, loss = self.one_step_iteration(episode, step, prev_state, cumulated_reward)

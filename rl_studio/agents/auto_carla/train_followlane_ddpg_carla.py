@@ -117,6 +117,7 @@ class TrainerFollowLaneDDPGCarla:
         self.env_params = LoadEnvParams(config)
         self.global_params = LoadGlobalParams(config)
         self.environment = LoadEnvVariablesDDPGCarla(config)
+        self.environment.environment["debug_waypoints"] = False
         self.loss = 0
 
         self.tensorboard = ModifiedTensorBoard(
@@ -155,6 +156,7 @@ class TrainerFollowLaneDDPGCarla:
         self.episodes_reward = []
         self.step_fps = []
         self.bad_perceptions = 0
+        self.crash = 0
 
         self.all_steps_reward = []
         self.all_steps_velocity = []
@@ -271,6 +273,8 @@ class TrainerFollowLaneDDPGCarla:
         if info["bad_perception"]:
             state = prev_state
             self.bad_perceptions += 1
+        if info["crash"]:
+            self.crash += 1
         self.set_stats(info, prev_state)
 
         if not self.all_steps % 3000:
@@ -377,7 +381,7 @@ class TrainerFollowLaneDDPGCarla:
             last_bad_perception = 0
 
             prev_state, _ = self.env.reset()
-            while failures < 4:
+            while failures < 2:
                 state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state,
                                                                                         cumulated_reward, done)
                 if bad_perception:
@@ -390,6 +394,8 @@ class TrainerFollowLaneDDPGCarla:
                 else:
                     failures = 0
 
+                if step >= self.env_params.estimated_steps:
+                    break
                 self.env.display_manager.render()
             episode_time = step * self.environment.environment["fixed_delta_seconds"]
             self.log.logger.info("finished in step " + str(step))
@@ -423,6 +429,7 @@ class TrainerFollowLaneDDPGCarla:
         steering_std_dev = np.std(self.episodes_steer)
         advanced_meters = avg_speed * episode_time
         bad_perceptions_perc = self.bad_perceptions / step
+        completed = 1 if step >= self.env_params.estimated_steps else 0
         self.tensorboard.update_stats(
             std_dev=self.exploration,
             steps_episode=step,
@@ -438,7 +445,9 @@ class TrainerFollowLaneDDPGCarla:
             bad_perceptions_perc=bad_perceptions_perc,
             since_last_bad_perception=since_last_perception,
             cpu=self.cpu_usages,
-            gpu=self.gpu_usages
+            gpu=self.gpu_usages,
+            collisions = self.crash,
+            completed = completed
         )
         self.tensorboard.update_fps(self.step_fps)
         self.episodes_speed = []
@@ -447,3 +456,4 @@ class TrainerFollowLaneDDPGCarla:
         self.episodes_reward = []
         self.step_fps = []
         self.bad_perceptions = 0
+        self.crash = 0

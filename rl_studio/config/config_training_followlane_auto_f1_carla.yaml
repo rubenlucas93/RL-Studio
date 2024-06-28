@@ -17,7 +17,7 @@ settings:
   logs_dir: "./logs"
   metrics_dir: "./metrics"
   debug_stats: false
-  show_monitoring: false
+  show_monitoring: true
   steps_to_decrease: 20000
   decrease_substraction: 0.005
   decrease_min: 0.005
@@ -25,7 +25,7 @@ settings:
     function: pow
     punish_zig_zag_value: 0.5
     punish_ineffective_vel: 1
-    beta_1: 0.9
+    beta_1: 0.8
 
 ros:
   ros_master_uri: "11311"
@@ -120,5 +120,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 4001
+  carla_client: 2000
   manager_port: 8013

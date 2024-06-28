@@ -1,5 +1,5 @@
 settings:
-  mode: retraining # training, retraining, inference
+  mode: training # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
   algorithm: ddpg # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
@@ -20,12 +20,12 @@ settings:
   show_monitoring: false
   steps_to_decrease: 10000
   decrease_substraction: 0.005
-  decrease_min: 0.005
+  decrease_min: 0.003
   reward_params:
     function: pow
     punish_zig_zag_value: 0.5
-    punish_ineffective_vel: 1
-    beta_1: 0.9
+    punish_ineffective_vel: 2
+    beta_1: 0.8
 
 ros:
   ros_master_uri: "11311"
@@ -33,7 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: IMPROVED/20240615-113834S-sp5_A-continuous_MR-396121_E-7
+    retrain_ddpg_tf_model_name: IMPROVED/20240625-074727S-sp5_A-continuous_MR-678_E-5791
 
 inference:
   ddpg:
@@ -47,8 +47,8 @@ algorithm:
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
-    critic_lr: 0.0008
-    actor_lr: 0.0006
+    critic_lr: 0.0005
+    actor_lr: 0.0004
     buffer_capacity: 100_000
     batch_size: 120
 
@@ -80,7 +80,7 @@ states:
 
 actions:
   continuous:
-    v: [0, 0.8]
+    v: [0, 1]
     w: [-0.5, 0.5]
 
 
@@ -97,11 +97,11 @@ carla_environments:
     traffic_pedestrians: False
     city_lights: False
     car_lights: False
-    estimated_steps: 5000
+    estimated_steps: 2000
     save_episodes: 5 # not used in this carla ppo
     save_every_step: 100 # not used in this carla ppo
-    init_pose:
     goal_pose:
+    init_pose:
     filter: vehicle.*
     generation: "2"
     rolename: "hero" #name
@@ -110,8 +110,14 @@ carla_environments:
     detection_mode: lane_detector
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.4
-    alternate_pose: false
+    reset_threshold: 0.3
+    alternate_pose: True
+    spawn_points: [
+      [ -475.906342, 352.208710, 1.007515, 0.051254, 54.662395, 0.072115 ],
+      [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 0.006703],
+      [384.381470, -47.060329, 1.007339, 0.031453, 90.310402, 0.008101],
+      [195.221252, -367.893829, 1.009260, 0.248796, 0.152361, -0.002625]
+    ]
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6912 # {6912} 1471 6927 899 6294    waypoints_target: 959 #961
     waypoints_target: 959 #961

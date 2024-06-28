@@ -122,6 +122,21 @@ def wasDetected(center_lanes):
     return True
 
 
+def getTransformFromPoints(points):
+    return carla.Transform(
+            carla.Location(
+                x=points[0],
+                y=points[1],
+                z=points[2],
+            ),
+            carla.Rotation(
+                pitch=points[3],
+                yaw=points[4],
+                roll=points[5],
+            ),
+        )
+
+
 class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def __init__(self, **config):
 
@@ -133,6 +148,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         FollowLaneCarlaConfig.__init__(self, **config)
         self.sync_mode = config["sync"]
         self.reset_threshold = config["reset_threshold"] if self.sync_mode else 1
+        self.spawn_points = config.get("spawn_points")
         self.detection_mode = config.get("detection_mode")
         if self.detection_mode == 'yolop':
             from rl_studio.envs.carla.utils.yolop.YOLOP import get_net
@@ -163,6 +179,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # self.vehicle = None
         # self.actor_list = []
         self.timer = CustomTimer()
+        self.step_count = 0
 
         self.client = carla.Client(
             config["carla_server"],
@@ -410,10 +427,18 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def setup_car_random_pose(self):
         car_bp = self.world.get_blueprint_library().filter("vehicle.*")[0]
-        location = random.choice(self.world.get_map().get_spawn_points())
-        self.car = self.world.try_spawn_actor(car_bp, location)
-        while self.car is None:
+        if self.spawn_points is not None:
+            spawn_point_index = random.randint(0, len(self.spawn_points)-1)
+            spawn_point = self.spawn_points[spawn_point_index]
+            location = getTransformFromPoints(spawn_point)
+            self.car = self.world.spawn_actor(car_bp, location)
+            while self.car is None:
+                self.car = self.world.spawn_actor(car_bp, location)
+        else:
+            location = random.choice(self.world.get_map().get_spawn_points())
             self.car = self.world.try_spawn_actor(car_bp, location)
+            while self.car is None:
+                self.car = self.world.try_spawn_actor(car_bp, location)
         self.actor_list.append(self.car)
         time.sleep(1)
 
@@ -497,6 +522,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 life_time=10000000,
                 persistent_lines=True,
             )
+            if self.step_count % 100 == 0:
+                print(self.car.get_transform())
 
         # self.show_ll_seg_image(center_lanes, ll_segment_post_process, name="ll_seg_all")
 
@@ -515,12 +542,17 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # right_lane_normalized goes between 1 and -1
         distance_error = [abs(x) for x in right_lane_normalized_distances]
         ## -------- Rewards
-        reward, done = self.rewards_easy(distance_error, params)
+        reward, done, crash = self.rewards_easy(distance_error, params)
+        self.step_count += 1
+        if done:
+            self.step_count == 0
 
         params["bad_perception"], _ = self.has_bad_perception(right_lane_normalized_distances, threshold=0.999)
+        params["crash"] = crash
 
         right_lane_normalized_distances.append(params["velocity"]/5)
         right_lane_normalized_distances.append(params["steering_angle"])
+
         return np.array(right_lane_normalized_distances), reward, done, params
 
     def control(self, action):
@@ -558,31 +590,40 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return function_reward
 
     def rewards_easy(self, distance_error, params):
-        done, states_non_line = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
+        done = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
                                                        min_conf_states=len(distance_error)//2)
         params["d_reward"] = 0
         params["v_reward"] = 0
         params["v_eff_reward"] = 0
         params["reward"] = 0
         if done:
-            return 0, done
+            crash = True
+            return -10, done, crash
+
+        crash = False
+        done, states_above_threshold = self.has_bad_perception(distance_error, self.reset_threshold, len(distance_error)//2)
+
+        if done:
+            return 0, done, crash
 
         if params["velocity"] < self.punish_ineffective_vel:
-            return 0, done
+            return 0, done, crash
 
         d_rewards = []
         for _, error in enumerate(distance_error):
-            d_rewards.append(math.pow(1 - error, 7))
+            # d_rewards.append(1 - error)
+            d_rewards.append(math.pow(max(0.6 - error, 0), 3))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(d_rewards)
+        # d_reward = math.pow(d_reward, 9)
         params["d_reward"] = d_reward
 
         # reward Max = 1 here
         punish = 0
         punish += self.punish_zig_zag_value * abs(params["steering_angle"])
 
-        v_reward = params["velocity"]/50
+        v_reward = params["velocity"]/20
         v_eff_reward = v_reward * d_reward
         params["v_reward"] = v_reward
         params["v_eff_reward"] = v_eff_reward
@@ -596,7 +637,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             function_reward = 0
         params["reward"] = function_reward
 
-        return function_reward, done
+        return function_reward, done, crash
 
     def rewards_followlane_center_v_w(self):
         """esta sin terminar"""
@@ -940,12 +981,11 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 extended_lines.append([(x1_extended, y1_extended, x2_extended, y2_extended)])
         return extended_lines
 
-    def end_if_conditions(self, distances_error, threshold=0.3, min_conf_states=2):
-        done, states_above_threshold = self.has_bad_perception(distances_error, threshold, min_conf_states)
+    def end_if_conditions(self, distances_error, threshold=0.3, min_conf_states=3):
         if len(self.collision_hist) > 0:  # te has chocado, baby
-            done = True
+            return True
 
-        return done, states_above_threshold
+        return False
 
     def set_init_pose(self):
         ## ---  Car
