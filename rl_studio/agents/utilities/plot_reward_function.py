@@ -42,23 +42,26 @@ def rewards_followline_velocity_center(v, pos, range_v):
 
 def rewards_easy(v, pos):
     if v < 1:
+        return 0
+
+    if abs(pos) > 0.3:
         return -1
 
-    d_reward = math.pow(1 - abs(pos), 9)
+    d_reward = math.pow(max(0.5 - abs(pos), 0)/0.5, 3)
 
     # reward Max = 1 here
 
-    v_reward = v / 50
-    v_eff_reward = v_reward * d_reward
+    v_reward = v / 20
+    v_eff_reward = v_reward * math.pow(d_reward, 5)
 
-    beta = 0.99
+    beta = 0.7
     # TODO Ver que valores toma la velocity para compensarlo mejor
     function_reward = beta * d_reward + (1 - beta) * v_eff_reward
 
     return function_reward
 
 
-range_v = [0, 10]
+range_v = [0, 20]
 
 # Define the ranges for v, w, and pos
 v_range = np.linspace(range_v[0], range_v[1], 50)  # Adjust the range as needed

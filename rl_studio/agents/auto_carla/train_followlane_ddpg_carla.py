@@ -269,7 +269,7 @@ class TrainerFollowLaneDDPGCarla:
 
         state, reward, done, info = self.env.step(action)
         self.step_fps.append(info["fps"])
-        # in csae perception was bad, we keep the previous frame
+        # in case perception was bad, we keep the previous frame
         if info["bad_perception"]:
             state = prev_state
             self.bad_perceptions += 1
@@ -381,7 +381,7 @@ class TrainerFollowLaneDDPGCarla:
             last_bad_perception = 0
 
             prev_state, _ = self.env.reset()
-            while failures < 2:
+            while failures < 3:
                 state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state,
                                                                                         cumulated_reward, done)
                 if bad_perception:

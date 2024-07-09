@@ -161,6 +161,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 transforms.ToTensor(),
                 normalize,
             ])
+
+            self.steps_stopped = 0
             # INIT YOLOP
             self.yolop_model = get_net()
             self.device = select_device()
@@ -250,6 +252,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def reset(self):
 
+        self.steps_stopped = 0
         self.collision_hist = []
         self.actor_list = []
         self.previous_time = 0
@@ -430,7 +433,10 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         if self.spawn_points is not None:
             spawn_point_index = random.randint(0, len(self.spawn_points)-1)
             spawn_point = self.spawn_points[spawn_point_index]
-            location = getTransformFromPoints(spawn_point)
+            if random.random() > 0.5:
+                location = getTransformFromPoints(spawn_point)
+            else:
+                location = random.choice(self.world.get_map().get_spawn_points())
             self.car = self.world.spawn_actor(car_bp, location)
             while self.car is None:
                 self.car = self.world.spawn_actor(car_bp, location)
@@ -440,6 +446,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             while self.car is None:
                 self.car = self.world.try_spawn_actor(car_bp, location)
         self.actor_list.append(self.car)
+        # initial_velocity = carla.Vector3D(x=random.randint(0, 15), y=0, z=0)  # 5 m/s in the x direction
+        # self.car.set_target_velocity(initial_velocity)
         time.sleep(1)
 
     def setup_col_sensor(self):
@@ -557,7 +565,18 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
     def control(self, action):
 
-        self.car.apply_control(carla.VehicleControl(throttle=float(action[0]), steer=float(action[1])))
+        # if action[0] >= 0:
+        #     self.car.apply_control(carla.VehicleControl(throttle=float(action[0]), steer=float(action[1])))
+        # else:
+        #     self.car.apply_control(carla.VehicleControl(throttle=0.0, brake=float(abs(action[0])), steer=float(action[1])))
+
+        v = self.car.get_velocity()
+
+        brake = 0.0
+        if action[2] > 0.5 and v.x ** 2 + v.y ** 2 + v.z ** 2 > self.punish_ineffective_vel:
+            brake = 0.2
+        self.car.apply_control(carla.VehicleControl(throttle=float(action[0]), brake=brake, steer=float(action[1])))
+
         params = {}
 
         v = self.car.get_velocity()
@@ -598,7 +617,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params["reward"] = 0
         if done:
             crash = True
-            return -10, done, crash
+            return -2, done, crash
 
         crash = False
         done, states_above_threshold = self.has_bad_perception(distance_error, self.reset_threshold, len(distance_error)//2)
@@ -607,12 +626,16 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             return 0, done, crash
 
         if params["velocity"] < self.punish_ineffective_vel:
+            self.steps_stopped += 1
+            if self.steps_stopped > 100:
+                done = True
             return 0, done, crash
 
+        self.steps_stopped = 0
         d_rewards = []
         for _, error in enumerate(distance_error):
             # d_rewards.append(1 - error)
-            d_rewards.append(math.pow(max(0.6 - error, 0), 3))
+            d_rewards.append(math.pow(max(0.6 - error, 0)/0.6, 3))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(d_rewards)
@@ -624,7 +647,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         punish += self.punish_zig_zag_value * abs(params["steering_angle"])
 
         v_reward = params["velocity"]/20
-        v_eff_reward = v_reward * d_reward
+        v_eff_reward = v_reward * math.pow(d_reward, 5)
         params["v_reward"] = v_reward
         params["v_eff_reward"] = v_eff_reward
 

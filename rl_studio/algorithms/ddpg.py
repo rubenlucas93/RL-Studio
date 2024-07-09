@@ -17,6 +17,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.optimizers import Adam
 from tensorboardX import SummaryWriter
 from tabulate import tabulate
+from tensorflow.keras.losses import MeanSquaredError, BinaryCrossentropy
 
 # Sharing GPU
 gpus = tf.config.experimental.list_physical_devices("GPU")
@@ -92,6 +93,7 @@ class ModifiedTensorBoard(TensorBoard):
         with self.writer.as_default():
             tf.summary.histogram("actions_v", actions[0], step=index)
             tf.summary.histogram("actions_w", actions[1], step=index)
+            tf.summary.histogram("actions_b", actions[2], step=index)
             self.writer.flush()
 
     def update_weights(self, weights_paramaters, index):
@@ -534,13 +536,14 @@ class DDPGAgent:
 
         sampled_actions[0] = sampled_actions[0] + noise
         sampled_actions[1] = sampled_actions[1] + noise
+        sampled_actions[2] = sampled_actions[2] + noise
 
         #print(f"debug: noise {noise}")
         #print(f"debug: post actions {sampled_actions[0]} {sampled_actions[1]}")
 
         legal_action_v = np.clip(sampled_actions[0], self.V_LOWER_BOUND, self.V_UPPER_BOUND)
         legal_action_w = np.clip(sampled_actions[1], self.W_RIGHT_BOUND, self.W_LEFT_BOUND)
-        legal_action = np.array([legal_action_v, legal_action_w])
+        legal_action = np.array([legal_action_v, legal_action_w, sampled_actions[2]])
         # print(f"debug: final actions {sampled_actions[0]} {sampled_actions[1]}")
 
         return np.squeeze(legal_action)
@@ -670,20 +673,26 @@ class DDPGAgent:
         inputs = Input(shape=self.OBSERVATION_SPACE_VALUES)
         # last_init = tf.random_uniform_initializer(minval=-1, maxval=0.01)
         hidden_init = tf.keras.initializers.GlorotUniform()
-        shared_layer = Dense(64, activation="relu", kernel_initializer=hidden_init)
+        shared_layer = Dense(32, activation="relu", kernel_initializer=hidden_init)
 
         v_branch = self.build_branch(inputs, "v_output", shared_layer)
         w_branch = self.build_branch(inputs, "w_output", shared_layer)
+        b_branch = self.build_branch(inputs, "b_output", shared_layer)
 
         v_branch = ((v_branch + 1) / 2) * (self.V_UPPER_BOUND - self.V_LOWER_BOUND) + self.V_LOWER_BOUND
         w_branch = w_branch * self.W_LEFT_BOUND
+        b_branch = tf.keras.activations.sigmoid(b_branch)
 
         # create the model using our input (the batch of images) and
         # two separate outputs --
         model = Model(
-            inputs=inputs, outputs=[v_branch, w_branch], name="continuous_two_actions"
+            inputs=inputs, outputs=[v_branch, w_branch, b_branch], name="continuous_two_actions"
         )
-        model.compile(loss="mse", optimizer=Adam(0.001))
+        model.compile(loss={
+                "v_output": MeanSquaredError(),
+                "w_output": MeanSquaredError(),
+                "b_output": BinaryCrossentropy()
+            },  optimizer=Adam(0.001))
 
         # return the constructed network architecture
         return model
@@ -696,12 +705,9 @@ class DDPGAgent:
         x = shared_layer(inputs)
         x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
         x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
-        x = Dense(32, activation="relu", kernel_initializer=hidden_init)(x)  # 8, 16, 32 neurons
 
         x = Dense(1, activation="tanh", kernel_initializer=last_init)(x)
-        # x = Activation("tanh", name=action_name)(x)
 
-        # return the category prediction sub-network
         return x
 
     def get_critic_model_sp_continuous_actions(self):
@@ -712,19 +718,19 @@ class DDPGAgent:
 
         # Actions V and W. For more actions, we should add more layers
         action_input_v = layers.Input(shape=(1))
-        action_out_v = layers.Dense(64, activation="relu")(action_input_v)
-        action_out_v = layers.Dense(64, activation="relu")(action_out_v)
+        action_out_v = layers.Dense(32, activation="relu")(action_input_v)
+        action_out_v = layers.Dense(32, activation="relu")(action_out_v)
 
         action_input_w = layers.Input(shape=(1))
-        action_out_w = layers.Dense(64, activation="relu")(action_input_w)
-        action_out_w = layers.Dense(64, activation="relu")(action_out_w)
+        action_out_w = layers.Dense(32, activation="relu")(action_input_w)
+        action_out_w = layers.Dense(32, activation="relu")(action_out_w)
 
         # Both are passed through separate layer before concatenating
         concat = layers.Concatenate()([state_out, action_out_v, action_out_w])
 
-        out = layers.Dense(128, activation="relu")(concat)
-        out = layers.Dense(128, activation="relu")(out)
-        out = layers.Dense(128, activation="tanh")(out)
+        out = layers.Dense(64, activation="relu")(concat)
+        out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(64, activation="tanh")(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for given state-action
