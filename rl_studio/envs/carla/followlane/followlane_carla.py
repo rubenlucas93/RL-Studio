@@ -270,8 +270,12 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # AutoCarlaUtils.show_image("bird_view", self.birds_eye_camera.front_camera, 1)
 
         raw_image = self.get_resized_image(self.front_camera_1_5.front_camera)
+        segmentated_image = self.get_resized_image(self.front_camera_1_5_segmentated.front_camera)
 
-        ll_segment_post_process = self.detect_lines(raw_image)
+        if self.detection_mode == 'carla_perfect':
+            ll_segment_post_process = self.detect_lines_from_segmentated(segmentated_image)
+        else:
+            ll_segment_post_process = self.detect_lines(raw_image)
         (
             center_lanes,
             distance_to_center_normalized,
@@ -501,8 +505,13 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         #    self.front_camera_1_5_red_mask.front_camera_red_mask
         # )
         raw_image = self.get_resized_image(self.front_camera_1_5.front_camera) # TODO Think it is not aligned with BM
+        segmentated_image = self.get_resized_image(self.front_camera_1_5_segmentated.front_camera)
 
-        ll_segment = self.detect_lines(raw_image)
+        if self.detection_mode == 'carla_perfect':
+            ll_segment = self.detect_lines_from_segmentated(segmentated_image)
+        else:
+            ll_segment = self.detect_lines(raw_image)
+
         (
             center_lanes,
             distance_to_center_normalized,
@@ -573,8 +582,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         v = self.car.get_velocity()
 
         brake = 0.0
-        if action[2] > 0.5 and v.x ** 2 + v.y ** 2 + v.z ** 2 > self.punish_ineffective_vel:
-            brake = 0.2
+        # if action[2] > 0.5 and v.x ** 2 + v.y ** 2 + v.z ** 2 > self.punish_ineffective_vel:
+        #     brake = 0.2
         self.car.apply_control(carla.VehicleControl(throttle=float(action[0]), brake=brake, steer=float(action[1])))
 
         params = {}
@@ -706,6 +715,47 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         return resized_img_np
 
+    def extract_green_lines(self, image):
+        # Convert the image to HSV color space
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        # Define the range for the green color in HSV space
+        lower_green = np.array([35, 100, 200])
+        upper_green = np.array([85, 255, 255])
+
+        # Create a mask for the green color
+        green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
+
+        return green_mask
+
+    def detect_lines_from_segmentated(self, ll_segment):
+        cv2.imshow('raw', ll_segment)
+
+        ll_segment = self.post_process(ll_segment)
+
+        green_mask = self.extract_green_lines(ll_segment)
+        # Display the original image with merged lines
+        cv2.imshow('green', green_mask)
+
+        lines = self.post_process_hough_programmatic(green_mask)
+
+        gray = cv2.cvtColor(ll_segment, cv2.COLOR_BGR2RGB)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        ll_segment = cv2.Canny(blur, 50, 100)
+
+        detected_lines = self.merge_and_extend_lines(lines, ll_segment)
+
+
+        # TODO (Ruben) It is quite hardcoded and unrobust. Fix this to enable all lines and more than
+        # 1 lane detection and cameras in other positions
+        boundary_y = ll_segment.shape[1] * 2 // 5
+        # Copy the lower part of the source image into the target image
+        ll_segment[boundary_y:, :] = detected_lines[boundary_y:, :]
+        ll_segment = (ll_segment // 255).astype(np.uint8)  # Keep the lower one-third of the image
+
+        return ll_segment
+
+
     def detect_lines(self, raw_image):
         if self.detection_mode == 'programmatic':
             gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
@@ -807,9 +857,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # Step 1: Create a binary mask image representing the trapeze
         mask = np.zeros_like(ll_segment)
         # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
-        pts = np.array([[280, 200], [-50, 400], [630, 400], [440, 200]], np.int32)
+        pts = np.array([[280, 200], [-50, 600], [630, 600], [440, 200]], np.int32)
         cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
-        cv2.imshow("applied_mask", mask) if self.sync_mode and self.show_images else None
+        cv2.imshow("applied_mask", mask)
 
         # Step 2: Apply the mask to the original image
         ll_segment_masked = cv2.bitwise_and(ll_segment, mask)
@@ -948,7 +998,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         edges = cv2.Canny(line_mask, 50, 100)
 
-        cv2.imshow("intermediate_hough", edges) if self.sync_mode and self.show_images else None
+        cv2.imshow("intermediate_hough", edges)
 
         # Reapply HoughLines on the dilated image
         lines = cv2.HoughLinesP(
@@ -978,7 +1028,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # line_mask = morphological_process(line_mask, kernel_size=5, func_type=cv2.MORPH_CLOSE)
         # kernel = np.ones((3, 3), np.uint8)  # Adjust the size as needed
         # eroded_image = cv2.erode(line_mask, kernel, iterations=1)
-        cv2.imshow("hough", line_mask) if self.sync_mode and self.show_images else None
+        cv2.imshow("hough", line_mask)
 
         return lines
 
@@ -1079,15 +1129,15 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             display_pos=[1, 0],
         )
 
-        # self.front_camera_1_5_segmentated = SensorManager(
-        #     self.world,
-        #     self.display_manager,
-        #     "SemanticCamera",
-        #     carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
-        #     self.car,
-        #     {},
-        #     display_pos=[0, 1],
-        # )
+        self.front_camera_1_5_segmentated = SensorManager(
+            self.world,
+            self.display_manager,
+            "SemanticCamera",
+            carla.Transform(carla.Location(x=2, z=1.5), carla.Rotation(yaw=+00)),
+            self.car,
+            {},
+            display_pos=[0, 1],
+        )
 
         # self.front_camera_1_5_red_mask = SensorManager(
         #     self.world,

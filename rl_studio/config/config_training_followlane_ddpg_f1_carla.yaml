@@ -108,7 +108,7 @@ carla_environments:
     rolename: "hero" #name
     gamma: 2.2 #for camera
     sync: True #syncronous mode or async
-    detection_mode: lane_detector
+    detection_mode: lane_det
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
     reset_threshold: 0.25
@@ -129,5 +129,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 2000
-  manager_port: 8018
+  carla_client: 2024
+  manager_port: 8022

@@ -242,6 +242,8 @@ class SensorManager:
         t_end = self.timer.time()
         self.time_processing += t_end - t_start
         self.tics_processing += 1
+        self.front_camera = array
+
 
     def save_red_mask_semantic_image(self, image):
         t_start = self.timer.time()
