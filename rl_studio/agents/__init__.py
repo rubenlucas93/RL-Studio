@@ -147,6 +147,23 @@ class TrainerFactory:
 
             return TrainerFollowLanePPOCarla(config)
 
+        # =============================
+        # FollowLane - F1 - SAC - Carla
+        # =============================
+
+        elif (
+            task == TasksType.FOLLOWLANECARLA.value
+            and agent == AgentsType.F1GAZEBO.value
+            and algorithm == AlgorithmsType.SAC.value
+            and simulator == EnvsType.CARLA.value
+            and framework == FrameworksType.TF.value
+        ):
+            from rl_studio.agents.auto_carla.train_followlane_sac_f1_carla_tf import (
+                TrainerFollowLaneSACF1CARLATF,
+            )
+
+            return TrainerFollowLaneSACF1CARLATF(config)
+
         elif (
             task == TasksType.FOLLOWLANECARLA.value
             and agent == AgentsType.AUTOCARLA.value
