@@ -5,6 +5,9 @@ import time
 import pynvml
 import psutil
 
+import torch as th
+import torch.nn as nn
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import gymnasium as gym
@@ -13,8 +16,11 @@ from tqdm import tqdm
 from rl_studio.agents.utilities.plot_npy_dataset import plot_rewards
 from rl_studio.agents.utilities.push_git_repo import git_add_commit_push
 from rl_studio.algorithms.utils import (
-    save_actorcritic_model,
+    save_actorcritic_baselines_model,
 )
+
+from wandb.integration.sb3 import WandbCallback
+import wandb
 
 from rl_studio.agents.f1.loaders import (
     LoadAlgorithmParams,
@@ -40,9 +46,10 @@ from rl_studio.algorithms.ddpg import (
 from rl_studio.envs.gazebo.gazebo_envs import *
 from rl_studio.envs.carla.carla_env import CarlaEnv
 
-from stable_baselines3 import SAC
+from stable_baselines3 import DDPG
+# from stable_baselines3 import DDPG
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.envs import DummyVecEnv
+from stable_baselines3.common.logger import configure
 
 
 try:
@@ -100,55 +107,55 @@ def combine_attributes(obj1, obj2, obj3):
     return combined_dict
 
 
-# class CustomPolicyNetwork(BaseFeaturesExtractor):
-#     def __init__(self, observation_space, features_dim=128):
-#         super(CustomPolicyNetwork, self).__init__(observation_space, features_dim)
-#         self.net = nn.Sequential(
-#             nn.Linear(observation_space.shape[0], 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 256),
-#             nn.ReLU(),
-#             nn.Linear(256, features_dim)
-#         )
-#
-#     def forward(self, observations):
-#         return self.net(observations)
-#
-# class CustomActorCriticPolicy(SAC):
-#     def __init__(self, *args, **kwargs):
-#         super(CustomActorCriticPolicy, self).__init__(*args, **kwargs)
-#         self.actor_net = nn.Sequential(
-#             nn.Linear(self.features_dim, 256),
-#             nn.ReLU(),
-#             nn.Linear(256, 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 2 + 1)  # 2 continuous actions + 1 binary action
-#         )
-#         self.critic_net = nn.Sequential(
-#             nn.Linear(self.features_dim, 256),
-#             nn.ReLU(),
-#             nn.Linear(256, 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 1)
-#         )
-#
-#     def _predict(self, observations, deterministic=False):
-#         features = self.extractor(observations)
-#         action_logits = self.actor_net(features)
-#         continuous_actions = th.sigmoid(action_logits[:, :2])  # Scale to [0, 1]
-#         binary_action_logits = action_logits[:, 2]
-#         binary_actions = (binary_action_logits > 0).float()
-#         actions = th.cat([continuous_actions, binary_actions.unsqueeze(-1)], dim=-1)
-#         return actions
-#
-#     def forward(self, observations, deterministic=False):
-#         return self._predict(observations, deterministic)
+class CustomPolicyNetwork(BaseFeaturesExtractor):
+    def __init__(self, observation_space, features_dim=128):
+        super(CustomPolicyNetwork, self).__init__(observation_space, features_dim)
+        self.net = nn.Sequential(
+            nn.Linear(observation_space.shape[0], 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, features_dim)
+        )
 
-class TrainerFollowLaneSACCarla:
+    def forward(self, observations):
+        return self.net(observations)
+
+class CustomActorCriticPolicy(DDPG):
+    def __init__(self, *args, **kwargs):
+        super(CustomActorCriticPolicy, self).__init__(*args, **kwargs)
+        self.actor_net = nn.Sequential(
+            nn.Linear(self.features_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 2)  # 2 continuous actions + 1 binary action
+        )
+        self.critic_net = nn.Sequential(
+            nn.Linear(self.features_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+
+    def _predict(self, observations, deterministic=False):
+        features = self.extractor(observations)
+        action_logits = self.actor_net(features)
+        continuous_actions = th.sigmoid(action_logits[:, :2])  # Scale to [0, 1]
+        binary_action_logits = action_logits[:, 2]
+        # binary_actions = (binary_action_logits > 0).float()
+        # actions = th.cat([continuous_actions, binary_actions.unsqueeze(-1)], dim=-1)
+        return continuous_actions
+
+    def forward(self, observations, deterministic=False):
+        return self._predict(observations, deterministic)
+
+class TrainerFollowLaneDDPGCarla:
     """
     Mode: training
     Task: Follow Line
-    Algorithm: SAC
+    Algorithm: DDPG
     Agent: F1
     Simulator: Gazebo
     Framework: TensorFlow
@@ -170,16 +177,6 @@ class TrainerFollowLaneSACCarla:
         self.tensorboard = ModifiedTensorBoard(
             log_dir=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
         )
-        # Initialize the scatter plots
-        fig = plt.figure(figsize=(12, 10))
-        # Plot 1: Velocity - State[0] - Reward
-        self.ax1 = fig.add_subplot(221, projection='3d')
-        # Plot 2: Velocity - State[11] - Reward
-        self.ax2 = fig.add_subplot(222, projection='3d')
-        # Plot 3: Steer - State[0] - Reward
-        self.ax3 = fig.add_subplot(223, projection='3d')
-        # Plot 4: Steer - State[11] - Reward
-        self.ax4 = fig.add_subplot(224, projection='3d')
 
         os.makedirs(f"{self.global_params.models_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.logs_dir}", exist_ok=True)
@@ -187,6 +184,7 @@ class TrainerFollowLaneSACCarla:
         os.makedirs(f"{self.global_params.metrics_graphics_dir}", exist_ok=True)
 
         log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
+        agent_log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_baselines_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
         self.log = LoggingHandler(log_file)
         # self.log.logger.basicConfig(filename=log_file, level=logging.INFO)
 
@@ -222,16 +220,39 @@ class TrainerFollowLaneSACCarla:
             mean=np.zeros(1),
             std_deviation=float(self.exploration) * np.ones(1),
         )
+        type(self.env.action_space)
 
-        # Instantiate the model
-        model =
-
-        # Train the model
-        model.learn(total_timesteps=10000)
+        self.params = {
+            "policy": "MlpPolicy",
+            "learning_rate": 0.0003,
+            "buffer_size": 1000000,
+            "batch_size": 256,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "total_timesteps": 500000
+        }
 
         # Init Agents
-        self.sac_agent = SAC("MlpPolicy", self.env, verbose=1)
+        if self.environment.environment["mode"] in ["inference", "retraining"]:
+            actor_retrained_model = self.environment.environment['retrain_ddpg_tf_actor_model_name']
+            self.ddpg_agent = DDPG.load(actor_retrained_model)
+        else:
+            # Assuming `self.params` and `self.global_params` are defined properly
+            self.ddpg_agent = DDPG(
+                'MlpPolicy',
+                self.env,
+                learning_rate=self.params["learning_rate"],
+                buffer_size=self.params["buffer_size"],
+                batch_size=self.params["batch_size"],
+                tau=self.params["tau"],
+                gamma=self.params["gamma"],
+                verbose=1,
+                tensorboard_log=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
+            )
 
+        agent_logger = configure(agent_log_file, ["stdout", "csv", "tensorboard"])
+
+        self.ddpg_agent.set_logger(agent_logger)
         random.seed(1)
         np.random.seed(1)
         tf.compat.v1.random.set_random_seed(1)
@@ -241,8 +262,8 @@ class TrainerFollowLaneSACCarla:
             self.current_max_reward = cumulated_reward
             self.best_epoch = episode
 
-            save_actorcritic_model(
-                self.sac_agent,
+            save_actorcritic_baselines_model(
+                self.ddpg_agent,
                 self.global_params,
                 self.algoritmhs_params,
                 self.environment.environment,
@@ -260,8 +281,8 @@ class TrainerFollowLaneSACCarla:
         if episode - 100 > self.best_epoch:
             self.best_epoch = episode
 
-            save_actorcritic_model(
-                self.sac_agent,
+            save_actorcritic_baselines_model(
+                self.ddpg_agent,
                 self.global_params,
                 self.algoritmhs_params,
                 self.environment.environment,
@@ -302,11 +323,14 @@ class TrainerFollowLaneSACCarla:
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
 
-        action, _states = self.sac_agent.predict(tf_prev_state, deterministic=True)
+        action, _states = self.ddpg_agent.predict(tf_prev_state, deterministic=True)
 
-        self.tensorboard.update_actions(action, self.all_steps)
+        act = action[0]
+        act[1] = act[1] - 0.5
 
-        state, reward, done, info = self.env.step(action)
+        self.tensorboard.update_actions(act, self.all_steps)
+
+        state, reward, done, info = self.env.step(act)
         self.step_fps.append(info["fps"])
         # in case perception was bad, we keep the previous frame
         if info["bad_perception"]:
@@ -374,18 +398,17 @@ class TrainerFollowLaneSACCarla:
         #     update_scatter_plot(self.ax4, self.all_steps_steer, self.all_steps_state11, self.all_steps_reward, "Steer",
         #                         "State[9]", "Reward")
 
-        if self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
-            self.sac_agent.replay_buffer.add(prev_state, action, reward, state, done)
-            self.sac_agent.train()
-            self.sac_agent.policy.update_target_network()
+        # if not self.all_steps % 100 and self.environment.environment["mode"] != "inference" and not info["bad_perception"]:
+        self.ddpg_agent.replay_buffer.add(prev_state, state, action, reward, float(done), [{}])
+        self.ddpg_agent.train(1)
 
         return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
-        hyperparams = combine_attributes(self.algoritmhs_params,
-                                         self.environment,
-                                         self.global_params)
-        self.tensorboard.update_hyperparams(hyperparams)
+        # hyperparams = combine_attributes(self.algoritmhs_params,
+        #                                  self.environment,
+        #                                  self.global_params)
+        # self.tensorboard.update_hyperparams(hyperparams)
         # best_epoch_training_time = 0
         # best_epoch = 1
 
@@ -400,42 +423,20 @@ class TrainerFollowLaneSACCarla:
             f"logs_tensorboard_dir = {self.global_params.logs_tensorboard_dir}\n"
         )
 
-        ## -------------    START TRAINING --------------------
-        for episode in tqdm(
-                range(1, self.env_params.total_episodes + 1), ascii=True, unit="episodes"
-        ):
-            done = False
-            self.tensorboard.step = episode
-            cumulated_reward = 0
-            failures = 0
-            step = 1
-            last_bad_perception = 0
+        run = wandb.init(
+            project="rl-follow-lane",
+            config=self.params,
+            sync_tensorboard=True,
+        )
 
-            prev_state, _ = self.env.reset()
-            while failures < 3:
-                state, cumulated_reward, done, bad_perception = self.one_step_iteration(episode, step, prev_state,
-                                                                                        cumulated_reward, done)
-                if bad_perception:
-                    last_bad_perception = step
-                    self.log.logger.info("bad perception in step " + str(step))
-                prev_state = state
-                step += 1
-                if done:
-                    failures += 1
-                else:
-                    failures = 0
+        self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
+                              callback=WandbCallback(
+                                  gradient_save_freq=100,
+                                  model_save_freq=50000,
+                                  model_save_path=f"{self.global_params.models_dir}/{run.id}",
+                                  verbose=2)
+                              )
 
-                if step >= self.env_params.estimated_steps:
-                    break
-                self.env.display_manager.render()
-            episode_time = step * self.environment.environment["fixed_delta_seconds"]
-            self.log.logger.info("finished in step " + str(step))
-
-            since_last_perception = step - last_bad_perception
-            self.save_if_best_epoch(episode, step, cumulated_reward)
-            self.calculate_and_report_episode_stats(episode_time, step, cumulated_reward, since_last_perception)
-            self.env.destroy_all_actors()
-            self.env.display_manager.destroy()
         # self.env.close()
 
     def set_stats(self, info, prev_state):

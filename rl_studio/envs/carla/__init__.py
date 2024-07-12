@@ -13,7 +13,14 @@ class Carla:
         weather = environment["weather"]
         traffic_pedestrians = environment["traffic_pedestrians"]
 
-        if (
+        if framework == FrameworksType.BASELINES:
+            from rl_studio.envs.carla.followlane.followlane_carla_sb import (
+                FollowLaneStaticWeatherNoTraffic,
+            )
+
+            return FollowLaneStaticWeatherNoTraffic(**environment)
+
+        elif (
             task == TasksType.FOLLOWLANECARLA.value
             and algorithm == AlgorithmsType.QLEARN.value
             and weather != "dynamic"
