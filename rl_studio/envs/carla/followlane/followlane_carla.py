@@ -1226,7 +1226,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def detect_lane_detector(self, raw_image):
         image_tensor = raw_image.transpose(2, 0, 1).astype('float32') / 255
         x_tensor = torch.from_numpy(image_tensor).to("cuda").unsqueeze(0)
-        model_output = torch.softmax(self.lane_model.forward(x_tensor), dim=1).cpu().numpy()
+        model_output = torch.softmax(self.lane_model.forward(x_tensor), dim=1).to("cuda").numpy()
         return model_output
 
 
