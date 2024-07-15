@@ -255,7 +255,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         time.sleep(1)
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
 
         if len(self.actor_list) > 0:
             self.destroy_all_actors()
