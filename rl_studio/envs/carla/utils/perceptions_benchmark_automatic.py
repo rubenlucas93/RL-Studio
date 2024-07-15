@@ -113,7 +113,7 @@ def post_process(ll_segment):
     # Step 1: Create a binary mask image representing the trapeze
     mask = np.zeros_like(ll_segment)
     # pts = np.array([[300, 250], [-500, 600], [800, 600], [450, 260]], np.int32)
-    pts = np.array([[180, 200], [-50, 450], [630, 450], [440, 200]], np.int32)
+    pts = np.array([[280, 200], [-50, 600], [630, 600], [440, 200]], np.int32)
     cv2.fillPoly(mask, [pts], (255, 255, 255))  # Fill trapeze region with white (255)
     cv2.imshow("applied_mask", mask) if show_images else None
 
@@ -486,8 +486,32 @@ def lane_detection_overlay(image, left_mask, right_mask):
     res[right_mask > 0.5,:] = [0, 0, 255]
     return res
 
+def extract_green_lines(image):
+    # Convert the image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Define the range for the green color in HSV space
+    lower_green = np.array([35, 100, 200])
+    upper_green = np.array([85, 255, 255])
+
+    # Create a mask for the green color
+    green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
+
+    return green_mask
+
 def detect_lines(raw_image, detection_mode, processing_mode):
-    if detection_mode == 'programmatic':
+    if detection_mode == 'carla_perfect':
+
+        green_mask = extract_green_lines(raw_image)
+
+        lines = post_process_hough_programmatic(green_mask)
+
+        gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        ll_segment = cv2.Canny(blur, 50, 100)
+        ll_segment = post_process(ll_segment)
+
+    elif detection_mode == 'programmatic':
         gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
         # mask_white = cv2.inRange(gray, 200, 255)
         # mask_image = cv2.bitWiseAnd(gray, mask_white)
@@ -795,7 +819,8 @@ def draw_dash(index, dist, ll_segment):
 def calculate_and_plot_lines_counts_above(save_results_benchmark_path, percs, yolop_left_perc, yolop_right_perc,
                                                 lane_detector_left_perc, lane_detector_right_perc,
                                                 lane_detector_v3_left_perc, lane_detector_v3_right_perc,
-                                                programmatic_left_perc, programmatic_right_perc, processing_mode):
+                                                programmatic_left_perc, programmatic_right_perc,
+                                                perfect_left_perc, perfect_right_perc, processing_mode):
 
     for perc in percs:
         yolop_counts = calculate_lines_counts_above(perc, yolop_left_perc, yolop_right_perc)
@@ -805,7 +830,9 @@ def calculate_and_plot_lines_counts_above(save_results_benchmark_path, percs, yo
                                                           lane_detector_v3_right_perc)
         prog_counts = calculate_lines_counts_above(perc, programmatic_left_perc, programmatic_right_perc)
 
-        subplots = 4 if processing_mode != "none" else 3
+        perfect_counts = calculate_lines_counts_above(perc, perfect_left_perc, perfect_right_perc)
+
+        subplots = 5 if processing_mode != "none" else 4
 
         fig2, axs2 = plt.subplots(1, subplots, figsize=(18, 6))
 
@@ -824,11 +851,16 @@ def calculate_and_plot_lines_counts_above(save_results_benchmark_path, percs, yo
         axs2[2].set_ylabel(f'percentage of images above {perc * 100}% detected')
         axs2[2].set_ylim(0, 100)
 
+        axs2[3].bar(['Just left', 'Just right', 'both', 'none'], perfect_counts, color=['blue', 'green'])
+        axs2[3].set_title('Perfect')
+        axs2[3].set_ylabel(f'percentage of images above {perc * 100}% detected')
+        axs2[3].set_ylim(0, 100)
+
         if processing_mode != "none":
-            axs2[3].bar(['Just left', 'Just right', 'both', 'none'], prog_counts, color=['blue', 'green'])
-            axs2[3].set_title('Programmatic')
-            axs2[3].set_ylabel(f'percentage of images above {perc * 100}% detected')
-            axs2[3].set_ylim(0, 100)
+            axs2[4].bar(['Just left', 'Just right', 'both', 'none'], prog_counts, color=['blue', 'green'])
+            axs2[4].set_title('Programmatic')
+            axs2[4].set_ylabel(f'percentage of images above {perc * 100}% detected')
+            axs2[4].set_ylim(0, 100)
 
         plt.savefig(save_results_benchmark_path / f'plot_{perc * 100}_above.png')
         plt.close()
@@ -842,8 +874,6 @@ def calculate_lines_counts_above(threshold, left_perc, right_perc):
         (np.sum((np.array(left_perc) >= threshold) & (np.array(right_perc) >= threshold)) / len(left_perc)) * 100,
         (np.sum((np.array(left_perc) < threshold) & (np.array(right_perc) < threshold)) / len(left_perc)) * 100,
     ]
-
-
 
 def perform_all_benchmarking(dataset, processing_mode):
     # Create the save directory if it doesn't exist
@@ -871,15 +901,18 @@ def perform_all_benchmarking(dataset, processing_mode):
     programmatic_times, programmatic_errors, programmatic_left_perc, programmatic_right_perc, percentage_programmatic = benchmark_one(
         dataset, "programmatic", processing_mode)
 
+    perfect_times, perfect_errors, perfect_left_perc, perfect_right_perc, percentage_perfect = benchmark_one(
+        dataset, "carla_perfect", processing_mode)
+
     # Plot 1: Average errors and calculation time
-    labels = ['YOLOP', 'Lane Detector_v2', 'Lane Detector_v3', 'Programmatic']
-    percentages = [percentage_yolop, percentage_lane, percentage_v3_lane, percentage_programmatic]
-    colors = ['blue', 'green', 'black', 'red']
+    labels = ['YOLOP', 'Lane Detector_v2', 'Lane Detector_v3', 'Perfect',  'Programmatic']
+    percentages = [percentage_yolop, percentage_lane, percentage_v3_lane, percentage_perfect, percentage_programmatic]
+    colors = ['blue', 'green', 'black', 'red', 'yellow']
 
     if processing_mode == "none":
-        labels.pop(3)
-        percentages.pop(3)
-        colors.pop(3)
+        labels.pop(4)
+        percentages.pop(4)
+        colors.pop(4)
 
     plt.figure(figsize=(10, 10))
     plt.subplot(1, 1, 1)
@@ -891,12 +924,12 @@ def perform_all_benchmarking(dataset, processing_mode):
     plt.savefig(save_results_benchmark_path / 'plot0.png')
     plt.close()
 
-    times = [np.mean(yolop_times), np.mean(lane_det_times), np.mean(lane_det_v3_times), np.mean(programmatic_times)]
-    colors = ['blue', 'green', 'black', 'red']
+    times = [np.mean(yolop_times), np.mean(lane_det_times), np.mean(lane_det_v3_times), np.mean(programmatic_times), np.mean(perfect_times)]
+    colors = ['blue', 'green', 'black', 'red', 'yellow']
 
     if processing_mode == "none":
-        times.pop(3)
-        colors.pop(3)
+        times.pop(4)
+        colors.pop(4)
 
     plt.figure(figsize=(10, 10))
     plt.subplot(1, 1, 1)
@@ -910,18 +943,19 @@ def perform_all_benchmarking(dataset, processing_mode):
     calculate_and_plot_lines_counts_above(save_results_benchmark_path, THRESHOLDS_PERC, yolop_left_perc, yolop_right_perc,
                                                 lane_detector_left_perc, lane_detector_right_perc,
                                                 lane_detector_v3_left_perc, lane_detector_v3_right_perc,
-                                                programmatic_left_perc, programmatic_right_perc, processing_mode)
+                                                programmatic_left_perc, programmatic_right_perc,
+                                                perfect_left_perc, perfect_right_perc, processing_mode)
 
     # Plot 3: Average errors
     fig3, ax3 = plt.subplots(1, 1, figsize=(10, 6))
     averages = np.array([np.mean(yolop_errors), np.mean(lane_detector_errors), np.mean(lane_detector_v3_errors),
-                np.mean(programmatic_errors)])
+               np.mean(perfect_errors),  np.mean(programmatic_errors)])
     averages = averages * 320
-    colors = ['blue', 'green', 'black', 'red']
+    colors = ['blue', 'green', 'black', 'red', 'yellow']
 
     if processing_mode == "none":
         averages = averages[:-1]
-        colors.pop(3)
+        colors.pop(4)
 
     ax3.bar(labels, averages, color=colors)
     ax3.set_xlabel('Perception Mode')
@@ -942,27 +976,27 @@ def perform_all_benchmarking(dataset, processing_mode):
     programmatic_errors = np.array(programmatic_errors)
     pix_programmatic_errors = programmatic_errors * 320
 
-    ecdf_yolop = ECDF(pix_yolop_errors)
-    ecdf_lane_detector = ECDF(pix_lane_detector_errors)
-    ecdf_lane_detector_v3 = ECDF(pix_lane_detector_v3_errors)
-    ecdf_programmatic = ECDF(pix_programmatic_errors)
-    ax4.plot(ecdf_yolop.x, ecdf_yolop.y, label='YOLOP')
-    ax4.plot(ecdf_lane_detector.x, ecdf_lane_detector.y, label='Lane Detector')
-    ax4.plot(ecdf_lane_detector_v3.x, ecdf_lane_detector_v3.y, label='Lane Detector V3')
+    # ecdf_yolop = ECDF(pix_yolop_errors)
+    # ecdf_lane_detector = ECDF(pix_lane_detector_errors)
+    # ecdf_lane_detector_v3 = ECDF(pix_lane_detector_v3_errors)
+    # ecdf_programmatic = ECDF(pix_programmatic_errors)
+    # ax4.plot(ecdf_yolop.x, ecdf_yolop.y, label='YOLOP')
+    # ax4.plot(ecdf_lane_detector.x, ecdf_lane_detector.y, label='Lane Detector')
+    # ax4.plot(ecdf_lane_detector_v3.x, ecdf_lane_detector_v3.y, label='Lane Detector V3')
 
-    if processing_mode != "none":
-        ax4.plot(ecdf_programmatic.x, ecdf_programmatic.y, label='Programmatic')
+    # if processing_mode != "none":
+    #     ax4.plot(ecdf_programmatic.x, ecdf_programmatic.y, label='Programmatic')
 
-    ax4.set_xlabel('Error')
-    ax4.set_ylabel('ECDF')
-    ax4.set_title('ECDF Comparison of Errors')
-    ax4.legend()
-    ax4.grid(True)
+    # ax4.set_xlabel('Error')
+    # ax4.set_ylabel('ECDF')
+    # ax4.set_title('ECDF Comparison of Errors')
+    # ax4.legend()
+    # ax4.grid(True)
 
-    plt.savefig(save_results_benchmark_path / 'plotecdf.png')
-    plt.close()
+    # plt.savefig(save_results_benchmark_path / 'plotecdf.png')
+    # plt.close()
 
-    subplots = 4 if processing_mode != "none" else 3
+    subplots = 5 if processing_mode != "none" else 4
 
     # Plot 2: Number of images with left and right lanes detected
     fig5, axs5 = plt.subplots(1, subplots, figsize=(18, 6))
@@ -982,6 +1016,10 @@ def perform_all_benchmarking(dataset, processing_mode):
         (np.mean((np.array(programmatic_left_perc))) * 100),
         (np.mean((np.array(programmatic_right_perc))) * 100)
     ]
+    perfect_avg_lines = [
+        (np.mean((np.array(perfect_left_perc))) * 100),
+        (np.mean((np.array(perfect_right_perc))) * 100)
+    ]
 
     axs5[0].bar(['left lane', 'right lane'], yolop_avg_lines, color=['blue', 'green'])
     axs5[0].set_title('YOLOP')
@@ -998,15 +1036,19 @@ def perform_all_benchmarking(dataset, processing_mode):
     axs5[2].set_ylabel('lane percentage detected')
     axs5[2].set_ylim(0, 100)
 
+    axs5[3].bar(['left lane', 'right lane'], perfect_avg_lines, color=['blue', 'green'])
+    axs5[3].set_title('perfect')
+    axs5[3].set_ylabel('lane percentage detected')
+    axs5[3].set_ylim(0, 100)
+
     if processing_mode != "none":
-        axs5[3].bar(['left lane', 'right lane'], programmatic_avg_lines, color=['blue', 'green'])
-        axs5[3].set_title('Programmatic')
-        axs5[3].set_ylabel('lane percentage detected')
-        axs5[3].set_ylim(0, 100)
+        axs5[4].bar(['left lane', 'right lane'], programmatic_avg_lines, color=['blue', 'green'])
+        axs5[4].set_title('Programmatic')
+        axs5[4].set_ylabel('lane percentage detected')
+        axs5[4].set_ylim(0, 100)
 
     plt.savefig(save_results_benchmark_path / 'plotlanepercentage.png')
     plt.close()
-
 
 
     print(f"All plots saved to {save_results_benchmark_path}")
