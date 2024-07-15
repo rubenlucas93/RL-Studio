@@ -123,16 +123,6 @@ class TrainerFollowLaneDDPGCarla:
         self.tensorboard = ModifiedTensorBoard(
             log_dir=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
         )
-        # Initialize the scatter plots
-        fig = plt.figure(figsize=(12, 10))
-        # Plot 1: Velocity - State[0] - Reward
-        self.ax1 = fig.add_subplot(221, projection='3d')
-        # Plot 2: Velocity - State[11] - Reward
-        self.ax2 = fig.add_subplot(222, projection='3d')
-        # Plot 3: Steer - State[0] - Reward
-        self.ax3 = fig.add_subplot(223, projection='3d')
-        # Plot 4: Steer - State[11] - Reward
-        self.ax4 = fig.add_subplot(224, projection='3d')
 
         os.makedirs(f"{self.global_params.models_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.logs_dir}", exist_ok=True)

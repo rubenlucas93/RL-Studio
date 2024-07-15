@@ -137,14 +137,14 @@ class TrainerFollowLaneAutoCarla:
         self.gpu_usages = 0
 
         # Initialize the scatter plots
-        fig = plt.figure(figsize=(12, 10))
-        self.ax1 = fig.add_subplot(321, projection='3d')
-        self.ax2 = fig.add_subplot(322, projection='3d')
-        self.ax3 = fig.add_subplot(323, projection='3d')
-        self.ax4 = fig.add_subplot(324, projection='3d')
-        self.ax5 = fig.add_subplot(325, projection='3d')
-        self.ax6 = fig.add_subplot(326, projection='3d')
-
+        # fig = plt.figure(figsize=(12, 10))
+        # self.ax1 = fig.add_subplot(321, projection='3d')
+        # self.ax2 = fig.add_subplot(322, projection='3d')
+        # self.ax3 = fig.add_subplot(323, projection='3d')
+        # self.ax4 = fig.add_subplot(324, projection='3d')
+        # self.ax5 = fig.add_subplot(325, projection='3d')
+        # self.ax6 = fig.add_subplot(326, projection='3d')
+        #
         random.seed(1)
         np.random.seed(1)
         tf.compat.v1.random.set_random_seed(1)
@@ -246,18 +246,18 @@ class TrainerFollowLaneAutoCarla:
                 # with_highest_reward=int(current_max_reward),
             )
             # Update scatter plot
-            update_scatter_plot(self.ax1, self.all_steps_velocity, self.all_steps_state0, self.all_steps_reward,
-                                "Velocity", "State[0]", "Reward")
-            update_scatter_plot(self.ax2, self.all_steps_velocity, self.all_steps_state1, self.all_steps_reward,
-                                "Velocity", "State[1]", "Reward")
-            update_scatter_plot(self.ax3, self.all_steps_velocity, self.all_steps_state2, self.all_steps_reward, "Velocity",
-                                "State[2]", "Reward")
-            update_scatter_plot(self.ax4, self.all_steps_velocity, self.all_steps_state3, self.all_steps_reward, "Velocity",
-                                "State[3]", "Reward")
-            update_scatter_plot(self.ax5, self.all_steps_velocity, self.all_steps_state4, self.all_steps_reward, "Velocity",
-                                "State[4]", "Reward")
-            update_scatter_plot(self.ax6, self.all_steps_steer, self.all_steps_state0, self.all_steps_reward, "Steer",
-                                "State[0]", "Reward")
+            # update_scatter_plot(self.ax1, self.all_steps_velocity, self.all_steps_state0, self.all_steps_reward,
+            #                     "Velocity", "State[0]", "Reward")
+            # update_scatter_plot(self.ax2, self.all_steps_velocity, self.all_steps_state1, self.all_steps_reward,
+            #                     "Velocity", "State[1]", "Reward")
+            # update_scatter_plot(self.ax3, self.all_steps_velocity, self.all_steps_state2, self.all_steps_reward, "Velocity",
+            #                     "State[2]", "Reward")
+            # update_scatter_plot(self.ax4, self.all_steps_velocity, self.all_steps_state3, self.all_steps_reward, "Velocity",
+            #                     "State[3]", "Reward")
+            # update_scatter_plot(self.ax5, self.all_steps_velocity, self.all_steps_state4, self.all_steps_reward, "Velocity",
+            #                     "State[4]", "Reward")
+            # update_scatter_plot(self.ax6, self.all_steps_steer, self.all_steps_state0, self.all_steps_reward, "Steer",
+            #                     "State[0]", "Reward")
 
         return state, cumulated_reward, done, 0
 
@@ -269,7 +269,6 @@ class TrainerFollowLaneAutoCarla:
         self.tensorboard.update_hyperparams(hyperparams)
         # best_epoch_training_time = 0
         # best_epoch = 1
-
 
         self.log.logger.info(
             f"\nstates = {self.global_params.states}\n"

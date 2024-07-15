@@ -34,6 +34,40 @@ class RolloutBuffer:
         del self.is_terminals[:]
 
 
+class ActorNetwork(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(ActorNetwork, self).__init__()
+
+        # Common layers
+        self.common = nn.Sequential(
+            nn.Linear(state_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+        )
+
+        # Branch for action 1
+        self.branch1 = nn.Sequential(
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
+        )
+
+        # Branch for action 2
+        self.branch2 = nn.Sequential(
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, state):
+        x = self.common(state)
+        action1 = self.branch1(x)
+        action2 = self.branch2(x)
+        return torch.cat((action1, action2), dim=-1)
+
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init):
         super(ActorCritic, self).__init__()
@@ -46,14 +80,16 @@ class ActorCritic(nn.Module):
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
         # actor
         if has_continuous_action_space:
-            self.actor = nn.Sequential(
-                nn.Linear(state_dim, 12),
-                nn.Tanh(),
-                nn.Linear(12, 12),
-                nn.Tanh(),
-                nn.Linear(12, action_dim),
-                nn.Sigmoid(),
-            )
+            # self.actor = nn.Sequential(
+            #     nn.Linear(state_dim, 12),
+            #     nn.Tanh(),
+            #     nn.Linear(12, 12),
+            #     nn.Tanh(),
+            #     nn.Linear(12, action_dim),
+            #     nn.Sigmoid(),
+            # )
+            self.actor = ActorNetwork(state_dim, action_dim)
+
         else:
             self.actor = nn.Sequential(
                 nn.Linear(state_dim, 64),

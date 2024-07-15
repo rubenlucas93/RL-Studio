@@ -1140,6 +1140,10 @@ class LoadEnvVariablesQlearnGazebo:
         self.environment["alternate_pose"] = config[self.environment_set][self.env][
             "alternate_pose"
         ]
+        self.environment["reset_threshold"] = config[self.environment_set][self.env].get("reset_threshold")
+        self.environment["detection_mode"] = config[self.environment_set][self.env]["detection_mode"]
+        self.environment["fixed_delta_seconds"] = config[self.environment_set][self.env]["fixed_delta_seconds"]
+        self.environment["async_forced_delta_seconds"] = config[self.environment_set][self.env]["async_forced_delta_seconds"]
         self.environment["sensor"] = config[self.environment_set][self.env]["sensor"]
         self.environment["gazebo_start_pose"] = [
             config[self.environment_set][self.env]["circuit_positions_set"][0]

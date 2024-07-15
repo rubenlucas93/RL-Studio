@@ -189,16 +189,16 @@ class TrainerFollowLanePPOCarla:
         self.all_steps += 1
 
         # TODO ñapa para decelerar y no hacer giros bruscos cuando se pierda la percepción
-        if bad_perception:
-            action = [0, 0]
-            state, reward, done, info = self.env.step(action)
-            return state, cumulated_reward, done, info["bad_perception"]
+        # if bad_perception:
+        #     action = [0, 0]
+        #     state, reward, done, info = self.env.step(action)
+        #     return state, cumulated_reward, done, info["bad_perception"]
 
         prev_state_fl = prev_state.astype(np.float32)
         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state_fl), 0)
 
         action = self.ppo_agent.select_action(tf_prev_state)
-        action[0] = action[0]  # TODO scale it propperly (now between 0 and 1)
+        # action[0] = action[0]  # TODO scale it propperly (now between 0 and 1)
         action[1] = action[1] - 0.5  # TODO scale it propperly (now between -0.5 and 0.5)
         self.tensorboard.update_actions(action, self.all_steps)
 

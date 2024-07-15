@@ -15,7 +15,7 @@ from rl_studio.envs.carla.followlane.utils import AutoCarlaUtils
 from PIL import Image
 from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
-
+from gymnasium import spaces
 
 from rl_studio.envs.carla.utils.bounding_boxes import BasicSynchronousClient
 from rl_studio.envs.carla.utils.manual_control import CameraManager
@@ -175,7 +175,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.lane_model.eval()
         elif self.detection_mode == "lane_detector":
             self.lane_model = torch.load(
-                '/home/ruben/Desktop/RL-Studio/rl_studio/envs/carla/utils/lane_det/best_model_torch.pth')
+                'envs/carla/utils/lane_det/best_model_torch.pth')
             self.lane_model.eval()
         # self.display_manager = None
         # self.vehicle = None
@@ -220,7 +220,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         self.perfect_distance_pixels = None
         self.perfect_distance_normalized = None
-
+        # TODO Actions just 2 now for experiment with sac
+        self.action_space = spaces.Box(low=np.array([0.0, 0.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=50, shape=(7,), dtype=np.float32)
 
     def setup_car_fix_pose(self, init):
         car_bp = self.world.get_blueprint_library().filter("vehicle.*")[0]

@@ -1,15 +1,15 @@
 settings:
   mode: training # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
-  algorithm: ppo_continuous # qlearn, dqn, ddpg, ppo
+  algorithm: ddpg # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
   environment_set: carla_environments # gazebo_environments, carla_environments
   env: follow_lane # Town01, simple, nurburgring, montreal, curves, simple_laser, manual, autoparking
-  agent: auto_carla # f1, autoparkingRL, auto_carla, mountain_car, robot_mesh, cartpole, turtlebot
-  actions: slow # slow, fast
+  agent: auto_carla # auto_carla, autoparkingRL, auto_carla, mountain_car, robot_mesh, cartpole, turtlebot
+  actions: continuous # slow, fast
   states: sp5 #image, sp1 (simplified perception with 1 point), sp3 (simplified perception with 3 points), spn (simplified perception with n points)
-  rewards: followline_center # followline_center, followline_center_v_w_linear
-  framework: TensorFlow # TensorFlow, Pytorch
+  rewards: followlane_center # followline_center, followline_center_v_w_linear
+  framework: baselines # TensorFlow, Pytorch
   total_episodes: 500000
   training_time: 72
   models_dir: "./checkpoints"
@@ -19,38 +19,38 @@ settings:
   debug_stats: false
   show_monitoring: false
   steps_to_decrease: 40000
-  decrease_substraction: 0.005
-  decrease_min: 0.01
+  decrease_substraction: 0.01
+  decrease_min: 0.005
   reward_params:
     function: pow
     punish_zig_zag_value: 0.5
-    punish_ineffective_vel: 2 # velocity below which reward is not calculated (0)
+    punish_ineffective_vel: 2
     beta_1: 0.7
-
 
 ros:
   ros_master_uri: "11311"
   gazebo_master_uri: "11345"
 
 retraining:
-  ppo:
-    retrain_ppo_tf_model_name: IMPROVED/20240707-205018MaxReward-327_Epoch-256_AM-265.1696257301197_AS-3.4917897281024195
+  ddpg:
+    retrain_ddpg_tf_model_name: IMPROVED/20240712-094257S-sp5_A-continuous_MR-1252_E-14745
+
 inference:
-  ppo:
-    inference_ppo_tf_actor_model_name:
-    inference_ppo_tf_critic_model_name:
+  ddpg:
+    retrain_ddpg_tf_model_name:
 
 algorithm:
-  ppo:
+  ddpg:
     gamma: 0.9
-    epsilon: 0.1
-    std_dev: 0.1
-    episodes_update: 50 # episodes how often the algorithm is trained
-    replay_memory_size: 50_000
+    tau: 0.005
+    std_dev: 0.07
+    model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
+    replay_memory_size: 10_000
     memory_fraction: 0.20
     critic_lr: 0.0003
     actor_lr: 0.0002
-    model_name: PPO_Actor_conv2d32x64_Critic_conv2d32x64
+    buffer_capacity: 100_000
+    batch_size: 120
 
 agents:
   auto_carla:
@@ -72,29 +72,21 @@ states:
   sp3:
     0: [10, 50, 150]
   sp5:
-    0: [ 280, 340, 380, 420, 460 ]
+    0: [280, 340, 380, 420, 460]
   sp10:
-    0: [370, 380, 390, 400, 410, 430, 470, 500, 530, 560]
+    0: [270, 280, 290, 300, 310, 330, 370, 400, 430, 460]
   spn:
     0: [10]
 
 actions:
-  slow:
+  continuous:
     v: [0, 1]
     w: [-0.5, 0.5]
+    b: [0, 1]
+
 
 rewards:
-  followline_center:
-    from_10: 10
-    from_02: 2
-    from_01: 1
-    penal: -100
-    min_reward: 5_000
-    highest_reward: 100
-  followline_center_v_w_linear: # only for continuous actions
-    penal: 0
-    min_reward: 1_000
-    highest_reward: 100
+  followlane_center:
 
 carla_environments:
   follow_lane:
@@ -106,39 +98,36 @@ carla_environments:
     traffic_pedestrians: False
     city_lights: False
     car_lights: False
-    estimated_steps: 5000
+    estimated_steps: 20000
     save_episodes: 5 # not used in this carla ppo
     save_every_step: 100 # not used in this carla ppo
-    init_pose:
     goal_pose:
+    init_pose:
     filter: vehicle.*
     generation: "2"
     rolename: "hero" #name
     gamma: 2.2 #for camera
     sync: True #syncronous mode or async
-    detection_mode: lane_detector
+    detection_mode: lane_detector_v2
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
     reset_threshold: 0.25
     alternate_pose: True
     spawn_points: [
-      [-397.733826, 9.278170, 1.006042, 0.041077, 179.631531, 0.000000],
-      [-129.059906, 420.335602, 1.006582, -0.054409, -19.703402, 0.064227],
-      [12.915828, 201.878281, 1.006114, -0.107630, -89.559113, -0.003174],
-      [-442.993164, 11.886087, 1.008324, 0.143653, 167.103622, 0.532254],
-      [-338.486603, 431.517761, 1.008051, 0.111756, 5.390700, 0.180541],
-      [ -475.906342, 352.208710, 1.007515, 0.051254, 54.662395, 0.072115 ],
-      [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 0.006703],
+      [ -475.906342, 352.208710, 1.007515, 0.051254, 55.662395, 0.072115 ],
+      [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 20.1006703],
       [384.381470, -47.060329, 1.007339, 0.031453, 90.310402, 0.008101],
-      [195.221252, -367.893829, 1.009260, 0.248796, 0.152361, -0.002625]
+      [195.221252, -367.893829, 1.009260, 0.248796, 0.152361, -0.002625],
+      [235.603699, 12.395636, 5.228042, 3.577455, 0.124573, -0.008118],
+      [385.585938, -176.352158, 1.007793, 0.082516, 270.889893, 0.078263]
     ]
     waypoints_meters: 5 #distance between waypoints in meters
-    waypoints_init: 6912 # {6912} 6927 1471
+    waypoints_init: 6912 # {6912} 1471 6927 899 6294    waypoints_target: 959 #961
     waypoints_target: 959 #961
-    waypoints_lane_id: -3
-    waypoints_road_id: 1401
+    waypoints_lane_id: -1
+    waypoints_road_id: 8
 
 carla:
   carla_server: localhost
   carla_client: 4010
-  manager_port: 8019
+  manager_port: 8022

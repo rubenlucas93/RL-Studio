@@ -23,6 +23,8 @@ from tensorflow.keras.losses import MeanSquaredError, BinaryCrossentropy
 gpus = tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
+if gpus:
+    tf.config.set_visible_devices(gpus[1], 'GPU')
 
 
 def build_markdown_table(data_dict):
