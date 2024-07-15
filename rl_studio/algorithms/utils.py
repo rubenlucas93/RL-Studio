@@ -26,4 +26,25 @@ def save_actorcritic_model(
         f"E-{episode}/CRITIC"
     )
 
+def save_actorcritic_baselines_model(
+    agent, global_params, algoritmhs_params, environment, cumulated_reward, episode, text
+):
+
+    timestamp = time.strftime('%Y%m%d-%H%M%S')
+    agent.save(
+        f"{global_params.models_dir}/{text}/{timestamp}"
+        f"S-{environment['states']}_"
+        f"A-{environment['action_space']}_"
+        f"MR-{int(cumulated_reward)}_"
+        f"E-{episode}/ACTOR"
+    )
+    agent.save(
+        f"{global_params.models_dir}/{text}/{timestamp}"
+        f"S-{environment['states']}_"
+        f"A-{environment['action_space']}_"
+        f"MR-{int(cumulated_reward)}_"
+        f"E-{episode}/CRITIC"
+    )
+
+
 
