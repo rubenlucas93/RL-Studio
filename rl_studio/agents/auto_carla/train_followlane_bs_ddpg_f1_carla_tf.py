@@ -19,6 +19,9 @@ from rl_studio.algorithms.utils import (
     save_actorcritic_baselines_model,
 )
 
+from stable_baselines3.common.callbacks import BaseCallback
+
+
 from wandb.integration.sb3 import WandbCallback
 import wandb
 
@@ -34,12 +37,8 @@ from rl_studio.agents.utils import (
     save_dataframe_episodes,
     LoggingHandler,
 )
-from rl_studio.algorithms.ddpg import (
-    ModifiedTensorBoard,
-)
 
 from rl_studio.algorithms.ddpg import (
-    ModifiedTensorBoard,
     OUActionNoise
 )
 
@@ -121,6 +120,24 @@ class CustomPolicyNetwork(BaseFeaturesExtractor):
     def forward(self, observations):
         return self.net(observations)
 
+
+class ExplorationRateCallback(BaseCallback):
+    def __init__(self, initial_exploration_rate=0.2, decay_rate=0.01, decay_steps=1000, verbose=0):
+        super(ExplorationRateCallback, self).__init__(verbose)
+        self.initial_exploration_rate = initial_exploration_rate
+        self.decay_rate = decay_rate
+        self.decay_steps = decay_steps
+        self.current_step = 0
+
+    def _on_step(self) -> bool:
+        self.current_step += 1
+        if self.current_step % self.decay_steps == 0:
+            new_exploration_rate = max(0, self.initial_exploration_rate - (self.current_step // self.decay_steps) * self.decay_rate)
+            self.model.exploration_rate = new_exploration_rate
+            if self.verbose > 0:
+                print(f"Step {self.current_step}: Setting exploration rate to {new_exploration_rate}")
+        return True
+
 class CustomActorCriticPolicy(DDPG):
     def __init__(self, *args, **kwargs):
         super(CustomActorCriticPolicy, self).__init__(*args, **kwargs)
@@ -172,11 +189,8 @@ class TrainerFollowLaneDDPGCarla:
         self.global_params = LoadGlobalParams(config)
         self.environment = LoadEnvVariablesDDPGCarla(config)
         self.environment.environment["debug_waypoints"] = False
+        self.environment.environment["logs_dir"] = f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
         self.loss = 0
-
-        self.tensorboard = ModifiedTensorBoard(
-            log_dir=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
-        )
 
         os.makedirs(f"{self.global_params.models_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.logs_dir}", exist_ok=True)
@@ -229,7 +243,7 @@ class TrainerFollowLaneDDPGCarla:
             "batch_size": 256,
             "gamma": 0.99,
             "tau": 0.005,
-            "total_timesteps": 500000
+            "total_timesteps": 20000
         }
 
         # Init Agents
@@ -328,8 +342,6 @@ class TrainerFollowLaneDDPGCarla:
         act = action[0]
         act[1] = act[1] - 0.5
 
-        self.tensorboard.update_actions(act, self.all_steps)
-
         state, reward, done, info = self.env.step(act)
         self.step_fps.append(info["fps"])
         # in case perception was bad, we keep the previous frame
@@ -405,14 +417,7 @@ class TrainerFollowLaneDDPGCarla:
         return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
-        # hyperparams = combine_attributes(self.algoritmhs_params,
-        #                                  self.environment,
-        #                                  self.global_params)
-        # self.tensorboard.update_hyperparams(hyperparams)
-        # best_epoch_training_time = 0
-        # best_epoch = 1
-
-        self.log.logger.info(
+       self.log.logger.info(
             f"\nstates = {self.global_params.states}\n"
             f"states_set = {self.global_params.states_set}\n"
             f"states_len = {len(self.global_params.states_set)}\n"
@@ -429,6 +434,9 @@ class TrainerFollowLaneDDPGCarla:
             sync_tensorboard=True,
         )
 
+
+        exploration_rate_callback = ExplorationRateCallback(initial_exploration_rate=0.2, decay_rate=0.01,
+                                                    decay_steps=1000, verbose=1)
         self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
                               callback=WandbCallback(
                                   gradient_save_freq=100,
@@ -452,40 +460,3 @@ class TrainerFollowLaneDDPGCarla:
         self.all_steps_state11.append(prev_state[6])
 
         pass
-
-    def calculate_and_report_episode_stats(self, episode_time, step, cumulated_reward, since_last_perception):
-        avg_speed = np.mean(self.episodes_speed)
-        max_speed = np.max(self.episodes_speed)
-        cum_d_reward = np.sum(self.episodes_d_reward)
-        max_reward = np.max(self.episodes_reward)
-        steering_std_dev = np.std(self.episodes_steer)
-        advanced_meters = avg_speed * episode_time
-        bad_perceptions_perc = self.bad_perceptions / step
-        completed = 1 if step >= self.env_params.estimated_steps else 0
-        self.tensorboard.update_stats(
-            std_dev=self.exploration,
-            steps_episode=step,
-            cum_rewards=cumulated_reward,
-            avg_speed=avg_speed,
-            max_speed=max_speed,
-            cum_d_reward=cum_d_reward,
-            max_reward=max_reward,
-            steering_std_dev=steering_std_dev,
-            advanced_meters=advanced_meters,
-            actor_loss=self.actor_loss,
-            critic_loss=self.critic_loss,
-            bad_perceptions_perc=bad_perceptions_perc,
-            since_last_bad_perception=since_last_perception,
-            cpu=self.cpu_usages,
-            gpu=self.gpu_usages,
-            collisions = self.crash,
-            completed = completed
-        )
-        self.tensorboard.update_fps(self.step_fps)
-        self.episodes_speed = []
-        self.episodes_d_reward = []
-        self.episodes_steer = []
-        self.episodes_reward = []
-        self.step_fps = []
-        self.bad_perceptions = 0
-        self.crash = 0
