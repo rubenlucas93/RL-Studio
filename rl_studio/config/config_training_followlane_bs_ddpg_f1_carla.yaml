@@ -129,5 +129,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 4010
+  carla_client: 2000
   manager_port: 8022

@@ -153,7 +153,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.tensorboard = ModifiedTensorBoard(
             log_dir=config.get("logs_dir")
         )
-        
+
+        self.actor_list = []
+
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
         self.sync_mode = config["sync"]
@@ -183,17 +185,18 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.yolop_model.load_state_dict(checkpoint['state_dict'])
             self.yolop_model = self.yolop_model.to(self.device)
         elif self.detection_mode == "lane_detector_v2":
-            self.lane_model = torch.load('/home/alumnos/rlucasz/Escritorio/RL-Studio/rl_studio/envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth', map_location=self.device)
+            self.lane_model = torch.load('envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth', map_location=self.device)
             self.lane_model.eval()
         elif self.detection_mode == "lane_detector":
             self.lane_model = torch.load(
-                '/home/alumnos/rlucasz/Escritorio/RL-Studio/rl_studio/envs/carla/utils/lane_det/best_model_torch.pth').to(self.device)
+                'envs/carla/utils/lane_det/best_model_torch.pth').to(self.device)
             self.lane_model.eval()
         # self.display_manager = None
         # self.vehicle = None
         # self.actor_list = []
         self.timer = CustomTimer()
         self.step_count = 0
+        self.all_steps = 0
         self.cumulated_reward = 0
         self.client = carla.Client(
             config["carla_server"],
@@ -536,7 +539,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     ################################################################################
     def step(self, action):
         # print(f"=============== STEP ===================")
-
+        self.all_steps+=1
         # action = [0, 0]
         ### -------- send action
         params = self.control(action)
@@ -637,7 +640,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.display_manager.render()
 
         self.cumulated_reward = self.cumulated_reward + reward
-        return np.array(right_lane_normalized_distances), reward, done, params
+        return np.array(right_lane_normalized_distances), reward, done, done, params
 
     def control(self, action):
 
@@ -657,8 +660,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         v = self.car.get_velocity()
         params["velocity"] = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
-        w = self.car.get_angular_velocity()
-        params["angular_velocity"] = w
+        # w = self.car.get_angular_velocity()
+        # params["angular_velocity"] = w
 
         w_angle = self.car.get_control().steer
         params["steering_angle"] = w_angle

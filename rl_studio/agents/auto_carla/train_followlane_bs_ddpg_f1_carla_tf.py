@@ -261,7 +261,7 @@ class TrainerFollowLaneDDPGCarla:
                 tau=self.params["tau"],
                 gamma=self.params["gamma"],
                 verbose=1,
-                tensorboard_log=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
+                # tensorboard_log=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
             )
 
         agent_logger = configure(agent_log_file, ["stdout", "csv", "tensorboard"])
@@ -417,27 +417,14 @@ class TrainerFollowLaneDDPGCarla:
         return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
-       self.log.logger.info(
-            f"\nstates = {self.global_params.states}\n"
-            f"states_set = {self.global_params.states_set}\n"
-            f"states_len = {len(self.global_params.states_set)}\n"
-            f"actions = {self.global_params.actions}\n"
-            f"actions set = {self.global_params.actions_set}\n"
-            f"actions_len = {len(self.global_params.actions_set)}\n"
-            f"actions_range = {range(len(self.global_params.actions_set))}\n"
-            f"logs_tensorboard_dir = {self.global_params.logs_tensorboard_dir}\n"
-        )
-
-        run = wandb.init(
+       run = wandb.init(
             project="rl-follow-lane",
             config=self.params,
             sync_tensorboard=True,
         )
-
-
-        exploration_rate_callback = ExplorationRateCallback(initial_exploration_rate=0.2, decay_rate=0.01,
+       exploration_rate_callback = ExplorationRateCallback(initial_exploration_rate=0.2, decay_rate=0.01,
                                                     decay_steps=1000, verbose=1)
-        self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
+       self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
                               callback=WandbCallback(
                                   gradient_save_freq=100,
                                   model_save_freq=50000,

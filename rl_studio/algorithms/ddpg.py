@@ -24,7 +24,7 @@ gpus = tf.config.experimental.list_physical_devices("GPU")
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 if gpus:
-    tf.config.set_visible_devices(gpus[1], 'GPU')
+    tf.config.set_visible_devices(gpus[0], 'GPU')
 
 
 def build_markdown_table(data_dict):
@@ -95,7 +95,9 @@ class ModifiedTensorBoard(TensorBoard):
         with self.writer.as_default():
             tf.summary.histogram("actions_v", actions[0], step=index)
             tf.summary.histogram("actions_w", actions[1], step=index)
-            tf.summary.histogram("actions_b", actions[2], step=index)
+
+            if len(actions) > 2 :
+                tf.summary.histogram("actions_b", actions[2], step=index)
             self.writer.flush()
 
     def update_weights(self, weights_paramaters, index):
