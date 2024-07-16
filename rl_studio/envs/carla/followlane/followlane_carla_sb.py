@@ -26,10 +26,6 @@ from rl_studio.envs.carla.utils.visualize_multiple_sensors import (
 )
 import pygame
 
-from rl_studio.algorithms.ddpg import (
-    ModifiedTensorBoard,
-)
-
 
 NO_DETECTED = 0
 
@@ -150,11 +146,10 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.debug_waypoints = config.get("debug_waypoints")
 
         self.failures = 0
-        self.tensorboard = ModifiedTensorBoard(
-            log_dir=config.get("logs_dir")
-        )
+        self.tensorboard = config.get("tensorboard")
 
         self.actor_list = []
+        self.episodes_speed = []
 
         ###### init class variables
         FollowLaneCarlaConfig.__init__(self, **config)
@@ -317,24 +312,23 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return np.array(right_lane_normalized_distances), state_size
 
     def calculate_and_report_episode_stats(self):
-        # episode_time = self.step_count * self.config["fixed_delta_seconds"]
-        # avg_speed = np.mean(self.episodes_speed)
-        # max_speed = np.max(self.episodes_speed)
+        episode_time = self.step_count * self.config["fixed_delta_seconds"]
+        avg_speed = np.mean(self.episodes_speed)
+        max_speed = np.max(self.episodes_speed)
         # cum_d_reward = np.sum(self.episodes_d_reward)
         # max_reward = np.max(self.episodes_reward)
         # steering_std_dev = np.std(self.episodes_steer)
-        # advanced_meters = avg_speed * episode_time
+        advanced_meters = avg_speed * episode_time
         # completed = 1 if self.step_count >= self.env_params.estimated_steps else 0
         self.tensorboard.update_stats(
-            # std_dev=self.exploration,
             steps_episode=self.step_count,
             cum_rewards=self.cumulated_reward,
-            # avg_speed=avg_speed,
-            # max_speed=max_speed,
+            avg_speed=avg_speed,
+            max_speed=max_speed,
             # cum_d_reward=cum_d_reward,
             # max_reward=max_reward,
             # steering_std_dev=steering_std_dev,
-            # advanced_meters=advanced_meters,
+            advanced_meters=advanced_meters,
             # actor_loss=self.actor_loss,
             # critic_loss=self.critic_loss,
             # cpu=self.cpu_usages,
@@ -543,6 +537,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # action = [0, 0]
         ### -------- send action
         params = self.control(action)
+        self.episodes_speed.append(params["velocity"])
+
         self.tensorboard.update_actions(action, self.all_steps)
 
         now = time.time()

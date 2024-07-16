@@ -18,12 +18,19 @@ from rl_studio.agents.utilities.push_git_repo import git_add_commit_push
 from rl_studio.algorithms.utils import (
     save_actorcritic_baselines_model,
 )
+from stable_baselines3.common.callbacks import CallbackList
 
 from stable_baselines3.common.callbacks import BaseCallback
 
 
 from wandb.integration.sb3 import WandbCallback
 import wandb
+
+
+from rl_studio.algorithms.ddpg import (
+    ModifiedTensorBoard,
+)
+
 
 from rl_studio.agents.f1.loaders import (
     LoadAlgorithmParams,
@@ -122,7 +129,7 @@ class CustomPolicyNetwork(BaseFeaturesExtractor):
 
 
 class ExplorationRateCallback(BaseCallback):
-    def __init__(self, initial_exploration_rate=0.2, decay_rate=0.01, decay_steps=1000, verbose=0):
+    def __init__(self, tensorboard, initial_exploration_rate=0.2, decay_rate=0.01, decay_steps=100, verbose=1):
         super(ExplorationRateCallback, self).__init__(verbose)
         self.initial_exploration_rate = initial_exploration_rate
         self.decay_rate = decay_rate
@@ -136,7 +143,12 @@ class ExplorationRateCallback(BaseCallback):
             self.model.exploration_rate = new_exploration_rate
             if self.verbose > 0:
                 print(f"Step {self.current_step}: Setting exploration rate to {new_exploration_rate}")
+            self.tensorboard.update_stats_same_step(
+                std_dev=self.model.exploration_rate
+            )
         return True
+
+
 
 class CustomActorCriticPolicy(DDPG):
     def __init__(self, *args, **kwargs):
@@ -160,7 +172,8 @@ class CustomActorCriticPolicy(DDPG):
         features = self.extractor(observations)
         action_logits = self.actor_net(features)
         continuous_actions = th.sigmoid(action_logits[:, :2])  # Scale to [0, 1]
-        binary_action_logits = action_logits[:, 2]
+        continuous_actions[1] = continuous_actions[1] - 0.5
+        # binary_action_logits = action_logits[:, 2]
         # binary_actions = (binary_action_logits > 0).float()
         # actions = th.cat([continuous_actions, binary_actions.unsqueeze(-1)], dim=-1)
         return continuous_actions
@@ -189,7 +202,12 @@ class TrainerFollowLaneDDPGCarla:
         self.global_params = LoadGlobalParams(config)
         self.environment = LoadEnvVariablesDDPGCarla(config)
         self.environment.environment["debug_waypoints"] = False
-        self.environment.environment["logs_dir"] = f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
+        logs_dir = f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
+        self.tensorboard = ModifiedTensorBoard(
+            log_dir=logs_dir
+        )
+        self.environment.environment["tensoroard"] = self.tensorboard
+
         self.loss = 0
 
         os.makedirs(f"{self.global_params.models_dir}", exist_ok=True)
@@ -197,9 +215,8 @@ class TrainerFollowLaneDDPGCarla:
         os.makedirs(f"{self.global_params.metrics_data_dir}", exist_ok=True)
         os.makedirs(f"{self.global_params.metrics_graphics_dir}", exist_ok=True)
 
-        log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
         agent_log_file = f"{self.global_params.logs_dir}/{time.strftime('%Y%m%d-%H%M%S')}_baselines_{self.global_params.mode}_{self.global_params.task}_{self.global_params.algorithm}_{self.global_params.agent}_{self.global_params.framework}.log"
-        self.log = LoggingHandler(log_file)
+        self.log = LoggingHandler(agent_log_file)
         # self.log.logger.basicConfig(filename=log_file, level=logging.INFO)
 
         ## Load Carla server
@@ -243,7 +260,7 @@ class TrainerFollowLaneDDPGCarla:
             "batch_size": 256,
             "gamma": 0.99,
             "tau": 0.005,
-            "total_timesteps": 20000
+            "total_timesteps": 5000000
         }
 
         # Init Agents
@@ -417,20 +434,26 @@ class TrainerFollowLaneDDPGCarla:
         return state, cumulated_reward, done, info["bad_perception"]
 
     def main(self):
-       run = wandb.init(
+        run = wandb.init(
             project="rl-follow-lane",
             config=self.params,
             sync_tensorboard=True,
         )
-       exploration_rate_callback = ExplorationRateCallback(initial_exploration_rate=0.2, decay_rate=0.01,
+        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.2, decay_rate=0.01,
                                                     decay_steps=1000, verbose=1)
-       self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
-                              callback=WandbCallback(
+
+
+        wandb_callback = WandbCallback(
                                   gradient_save_freq=100,
                                   model_save_freq=50000,
                                   model_save_path=f"{self.global_params.models_dir}/{run.id}",
                                   verbose=2)
-                              )
+
+
+        callback_list = CallbackList([exploration_rate_callback, wandb_callback])
+
+        self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
+                              callback=callback_list)
 
         # self.env.close()
 

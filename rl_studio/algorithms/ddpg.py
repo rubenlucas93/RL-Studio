@@ -74,7 +74,6 @@ class ModifiedTensorBoard(TensorBoard):
         with self.writer.as_default():
             for name, value in logs.items():
                 tf.summary.scalar(name, value, step=index)
-                self.step += 1
                 self.writer.flush()
 
     def _write_fps(self, fps):
@@ -88,6 +87,11 @@ class ModifiedTensorBoard(TensorBoard):
     # Creates writer, writes custom metrics and closes writer
     def update_stats(self, **stats):
         self._write_logs(stats, self.step)
+        self.step += 1
+
+    def update_stats_same_step(self, **stats):
+        self._write_logs(stats, self.step)
+
 
     def update_fps(self, fps):
         self._write_fps(fps)
