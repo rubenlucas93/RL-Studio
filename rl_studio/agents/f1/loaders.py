@@ -577,6 +577,7 @@ class LoadEnvVariablesDDPGCarla:
 
         # Training/inference
         self.environment["mode"] = config["settings"]["mode"]
+        self.environment["retrain_ddpg_tf_model_name"] = f"{config['retraining']['ddpg']['retrain_ddpg_tf_model_name']}"
         self.environment["retrain_ddpg_tf_actor_model_name"] = f"{config['retraining']['ddpg']['retrain_ddpg_tf_model_name']}/ACTOR"
         self.environment["retrain_ddpg_tf_critic_model_name"] = f"{config['retraining']['ddpg']['retrain_ddpg_tf_model_name']}/CRITIC"
         self.environment["inference_ddpg_tf_actor_model_name"] = f"{config['inference']['ddpg']['retrain_ddpg_tf_model_name']}/ACTOR"

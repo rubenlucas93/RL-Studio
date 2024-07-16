@@ -312,7 +312,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         return np.array(right_lane_normalized_distances), state_size
 
     def calculate_and_report_episode_stats(self):
-        episode_time = self.step_count * self.config["fixed_delta_seconds"]
+        if len(self.episodes_speed) == 0:
+            return
+        episode_time = self.step_count * self.fixed_delta_seconds
         avg_speed = np.mean(self.episodes_speed)
         max_speed = np.max(self.episodes_speed)
         # cum_d_reward = np.sum(self.episodes_d_reward)
