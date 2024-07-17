@@ -151,19 +151,20 @@ class PeriodicSaveCallback(BaseCallback):
         return True
 
 class ExplorationRateCallback(BaseCallback):
-    def __init__(self, tensorboard, initial_exploration_rate=0.2, decay_rate=0.01, decay_steps=10000, verbose=1):
+    def __init__(self, tensorboard, initial_exploration_rate=0.2, decay_rate=0.01, decay_steps=10000, exploration_min=0.005, verbose=1):
         super(ExplorationRateCallback, self).__init__(verbose)
         self.initial_exploration_rate = initial_exploration_rate
         self.decay_rate = decay_rate
         self.decay_steps = decay_steps
         self.current_step = 0
         self.tensorboard = tensorboard
+        self.exploration_min = exploration_min
         self.exploration_rate = initial_exploration_rate
 
     def _on_step(self) -> bool:
         self.current_step += 1
         if self.current_step % self.decay_steps == 0:
-            self.exploration_rate = max(0, self.exploration_rate - self.decay_rate)
+            self.exploration_rate = max(self.exploration_min, self.exploration_rate - self.decay_rate)
             # Assuming self.model is a DDPG model
             self.model.action_noise = NormalActionNoise(
                 mean=np.zeros(2),
@@ -327,8 +328,8 @@ class TrainerFollowLaneDDPGCarla:
             config=self.params,
             sync_tensorboard=True,
         )
-        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.2, decay_rate=0.01,
-                                                    decay_steps=10000, verbose=1)
+        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.2, decay_rate=0.005,
+                                                    decay_steps=10000,  exploration_min=0.005, verbose=1)
         wandb_callback = WandbCallback(gradient_save_freq=100, verbose=2)
         eval_callback = EvalCallback(
             self.env,

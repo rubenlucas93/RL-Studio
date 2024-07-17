@@ -497,22 +497,26 @@ def extract_green_lines(image):
     # Create a mask for the green color
     green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
 
-    return green_mask
+    # Create an empty black image of the same size and type as the input image
+    black_image = np.zeros_like(image)
+
+    # Copy only the green parts from the original image to the black image
+    black_image[green_mask > 0] = image[green_mask > 0]
+
+    # Convert the black image from BGR to RGB
+    rgb_black_image = cv2.cvtColor(black_image, cv2.COLOR_BGR2RGB)
+
+
+    return rgb_black_image
 
 def detect_lines(raw_image, detection_mode, processing_mode):
-    if detection_mode == 'carla_perfect':
 
-        green_mask = extract_green_lines(raw_image)
+    if detection_mode == 'programmatic' or detection_mode == 'carla_perfect':
+        if detection_mode == 'carla_perfect':
+            gray = extract_green_lines(raw_image)
+        else:
+            gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
 
-        lines = post_process_hough_programmatic(green_mask)
-
-        gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        ll_segment = cv2.Canny(blur, 50, 100)
-        ll_segment = post_process(ll_segment)
-
-    elif detection_mode == 'programmatic':
-        gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)
         # mask_white = cv2.inRange(gray, 200, 255)
         # mask_image = cv2.bitWiseAnd(gray, mask_white)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)

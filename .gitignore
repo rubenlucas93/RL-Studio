@@ -345,4 +345,6 @@ dmypy.json
 !.vscode/extensions.json
 *.code-workspace
 
+*.wandb
+
 # End of https://www.toptal.com/developers/gitignore/api/python,vscode,pycharm,opencv,images

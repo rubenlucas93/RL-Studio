@@ -347,6 +347,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # self.bad_perceptions = 0
         # self.crash = 0
         self.cumulated_reward = 0
+        self.step_count = 0
 
     ####################################################
     ####################################################
@@ -619,8 +620,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         ## -------- Rewards
         reward, done, crash = self.rewards_easy(distance_error, params)
         self.step_count += 1
-        if done:
-            self.step_count == 0
 
         params["bad_perception"], _ = self.has_bad_perception(right_lane_normalized_distances, threshold=0.999)
         params["crash"] = crash
