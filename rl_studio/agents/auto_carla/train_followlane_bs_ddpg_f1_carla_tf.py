@@ -178,33 +178,52 @@ class ExplorationRateCallback(BaseCallback):
 class CustomActorCriticPolicy(DDPG):
     def __init__(self, *args, **kwargs):
         super(CustomActorCriticPolicy, self).__init__(*args, **kwargs)
-        self.actor_net = nn.Sequential(
+        self.actor_net_1 = nn.Sequential(
             nn.Linear(self.features_dim, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Linear(32, 2)  # 2 continuous actions + 1 binary action
+            nn.Linear(32, 1),
+            nn.Sigmoid()
         )
+        self.actor_net_2 = nn.Sequential(
+            nn.Linear(self.features_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+
         self.critic_net = nn.Sequential(
             nn.Linear(self.features_dim, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Linear(32, 1)
+            nn.Linear(32, 1),
         )
 
     def _predict(self, observations, deterministic=False):
         features = self.extractor(observations)
-        action_logits = self.actor_net(features)
-        continuous_actions = th.sigmoid(action_logits[:, :2])  # Scale to [0, 1]
-        continuous_actions[1] = continuous_actions[1] - 0.5
+        action1 = self.actor_net_1(features)
+        action2 = self.actor_net_2(features) - 0.5
         # binary_action_logits = action_logits[:, 2]
         # binary_actions = (binary_action_logits > 0).float()
         # actions = th.cat([continuous_actions, binary_actions.unsqueeze(-1)], dim=-1)
-        return continuous_actions
-
+        return th.cat((action1, action2), dim=-1)
     def forward(self, observations, deterministic=False):
         return self._predict(observations, deterministic)
+
+    def _get_constructor_parameters(self):
+        data = super()._get_constructor_parameters()
+        data.update(dict(
+            features_dim=self.features_dim
+        ))
+        return data
+
+    def extract_features(self, observations):
+        # Implement feature extraction if needed
+        return observations
 
 class TrainerFollowLaneDDPGCarla:
     """
@@ -300,7 +319,7 @@ class TrainerFollowLaneDDPGCarla:
         else:
             # Assuming `self.params` and `self.global_params` are defined properly
             self.ddpg_agent = DDPG(
-                'MlpPolicy',
+                CustomActorCriticPolicy,
                 self.env,
                 learning_rate=self.params["learning_rate"],
                 buffer_size=self.params["buffer_size"],
