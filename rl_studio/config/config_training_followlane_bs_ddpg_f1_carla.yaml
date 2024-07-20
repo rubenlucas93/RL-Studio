@@ -1,5 +1,5 @@
 settings:
-  mode: training # training, retraining, inference
+  mode: retraining # training, retraining, inference
   task: follow_lane_carla # follow_line_gazebo, follow_lane_gazebo, autoparking_gazebo
   algorithm: ddpg # qlearn, dqn, ddpg, ppo
   simulator: carla # openai, carla, gazebo, sumo
@@ -33,8 +33,7 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: /home/ruben/Desktop/RL-Studio/rl_studio/checkpoints/follow_lane_carla_ddpg_auto_carla_baselines/20240716-210453/best_model.zip
-
+    retrain_ddpg_tf_model_name: /home/ruben/Desktop/RL-Studio/rl_studio/checkpoints/follow_lane_carla_ddpg_auto_carla_baselines/20240717-184710/model_2090000_steps.zip
 inference:
   ddpg:
     retrain_ddpg_tf_model_name:

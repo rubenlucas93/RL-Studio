@@ -105,13 +105,17 @@ class SensorManager:
         attached,
         sensor_options,
         display_pos,
+        save_on_disk=False,
         client=None,
     ):
+        self.step=0
         self.surface = None
         self.world = world
         self.client = client  # added for BEV
         self.display_man = display_man
         self.display_pos = display_pos
+        self.save_images = save_on_disk
+        self.sensor_type = sensor_type
         self.sensor = self.init_sensor(sensor_type, transform, attached, sensor_options)
         self.sensor_options = sensor_options
         self.timer = CustomTimer()
@@ -123,6 +127,7 @@ class SensorManager:
         self.front_camera = None
         self.front_camera_red_mask = None
         self.front_camera_bev = None
+
 
     def init_sensor(self, sensor_type, transform, attached, sensor_options):
         if sensor_type == "RGBCamera":
@@ -137,7 +142,6 @@ class SensorManager:
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
             camera.listen(self.save_rgb_image)
 
-            return camera
         if sensor_type == "BIRD_VIEW":
             camera_bird = self.world.get_blueprint_library().find("sensor.camera.rgb")
             disp_size = self.display_man.get_display_size()
@@ -153,8 +157,6 @@ class SensorManager:
             camera = self.world.spawn_actor(camera_bird, transform, attach_to=attached)
             camera.listen(self.save_birdview)
 
-            return camera
-
         elif sensor_type == "SemanticCamera":
             camera_bp = self.world.get_blueprint_library().find(
                 "sensor.camera.semantic_segmentation"
@@ -168,8 +170,6 @@ class SensorManager:
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
             camera.listen(self.save_semantic_image)
-
-            return camera
 
         elif sensor_type == "RedMask":
             camera_bp = self.world.get_blueprint_library().find(
@@ -185,14 +185,14 @@ class SensorManager:
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
             # TODO: cambiar
             camera.listen(self.save_red_mask_semantic_image)
-
-            return camera
+        return camera
 
     def get_sensor(self):
         return self.sensor
 
     def save_rgb_image(self, image):
         t_start = self.timer.time()
+        self.step+=1
 
         image.convert(carla.ColorConverter.Raw)
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
@@ -208,6 +208,9 @@ class SensorManager:
         self.tics_processing += 1
 
         self.front_camera = array
+
+        if self.save_images:
+            cv2.imwrite(f"/home/ruben/Desktop/execution_images/{self.step}_{self.sensor_type}.png", array)
 
     def save_birdview(self, image):
         t_start = self.timer.time()
@@ -229,7 +232,7 @@ class SensorManager:
 
     def save_semantic_image(self, image):
         t_start = self.timer.time()
-
+        self.step+=1
         image.convert(carla.ColorConverter.CityScapesPalette)
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
@@ -244,6 +247,8 @@ class SensorManager:
         self.tics_processing += 1
         self.front_camera = array
 
+        if self.save_images:
+            cv2.imwrite(f"/home/ruben/Desktop/execution_images/{self.step}_{self.sensor_type}.png", array)
 
     def save_red_mask_semantic_image(self, image):
         t_start = self.timer.time()

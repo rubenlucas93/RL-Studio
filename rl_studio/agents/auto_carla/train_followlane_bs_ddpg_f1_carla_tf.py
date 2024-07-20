@@ -6,6 +6,7 @@ import pynvml
 import psutil
 
 from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.policies import ActorCriticPolicy
 
 
 import torch as th
@@ -175,9 +176,13 @@ class ExplorationRateCallback(BaseCallback):
             self.tensorboard.update_stats(std_dev=self.exploration_rate)
         return True
 
-class CustomActorCriticPolicy(DDPG):
-    def __init__(self, *args, **kwargs):
-        super(CustomActorCriticPolicy, self).__init__(*args, **kwargs)
+class CustomActorCriticPolicy(ActorCriticPolicy):
+    def __init__(self, observation_space: gym.spaces.Space, action_space: gym.spaces.Space, lr_schedule, *args, **kwargs):
+        # Filter out unexpected kwargs
+        kwargs.pop('n_critics', None)
+        super(CustomActorCriticPolicy, self).__init__(observation_space, action_space, lr_schedule, *args, **kwargs)
+        self.features_dim = observation_space.shape[0]
+
         self.actor_net_1 = nn.Sequential(
             nn.Linear(self.features_dim, 32),
             nn.ReLU(),
@@ -204,13 +209,11 @@ class CustomActorCriticPolicy(DDPG):
         )
 
     def _predict(self, observations, deterministic=False):
-        features = self.extractor(observations)
+        features = self.extract_features(observations)
         action1 = self.actor_net_1(features)
         action2 = self.actor_net_2(features) - 0.5
-        # binary_action_logits = action_logits[:, 2]
-        # binary_actions = (binary_action_logits > 0).float()
-        # actions = th.cat([continuous_actions, binary_actions.unsqueeze(-1)], dim=-1)
         return th.cat((action1, action2), dim=-1)
+
     def forward(self, observations, deterministic=False):
         return self._predict(observations, deterministic)
 
@@ -319,7 +322,8 @@ class TrainerFollowLaneDDPGCarla:
         else:
             # Assuming `self.params` and `self.global_params` are defined properly
             self.ddpg_agent = DDPG(
-                CustomActorCriticPolicy,
+                # CustomActorCriticPolicy,
+                "MlpPolicy",
                 self.env,
                 learning_rate=self.params["learning_rate"],
                 buffer_size=self.params["buffer_size"],
@@ -347,8 +351,8 @@ class TrainerFollowLaneDDPGCarla:
             config=self.params,
             sync_tensorboard=True,
         )
-        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.2, decay_rate=0.005,
-                                                    decay_steps=10000,  exploration_min=0.005, verbose=1)
+        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.1, decay_rate=0.005,
+                                                    decay_steps=20000,  exploration_min=0.005, verbose=1)
         wandb_callback = WandbCallback(gradient_save_freq=100, verbose=2)
         eval_callback = EvalCallback(
             self.env,

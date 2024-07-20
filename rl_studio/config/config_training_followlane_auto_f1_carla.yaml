@@ -106,19 +106,19 @@ carla_environments:
     generation: "2"
     rolename: "hero" #name
     gamma: 2.2 #for camera
-    sync: false #syncronous mode or async
-    detection_mode: lane_detector
+    sync: true #syncronous mode or async
+    detection_mode: carla_perfect
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
     reset_threshold: 1
-    alternate_pose: True
+    alternate_pose: False
     waypoints_meters: 5 #distance between waypoints in meters
-    waypoints_init: 6911 # { 6911 } 6927 1471 899 | 2043 4404
+    waypoints_init: 6912 # { 6912 } 6927 1471 899 | 2043 4404
     waypoints_target: 959 #961
     waypoints_lane_id: -1
     waypoints_road_id: 8
 
 carla:
   carla_server: localhost
-  carla_client: 4003
+  carla_client: 2000
   manager_port: 8023

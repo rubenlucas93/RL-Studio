@@ -67,9 +67,9 @@ def select_device(logger=None, device='', batch_size=None):
     return torch.device('cuda:0' if cuda else 'cpu')
 
 device = select_device()
-images_high = 380
-upper_limit = 200
-x_row = [ upper_limit + 10, 270, 300, 320, images_high - 10 ]
+images_high = 500
+upper_limit = 280
+x_row = [ upper_limit + 10, upper_limit + 50, upper_limit + 90, upper_limit + 130, upper_limit + 170 ]
 NO_DETECTED = 0
 THRESHOLDS_PERC = [0.1, 0.3, 0.5, 0.7, 0.9]
 PERFECT_THRESHOLD = 0.9
@@ -1116,6 +1116,14 @@ def benchmark_one(dataset, detection_mode, processing_mode):
     times = []
     for i, (path, img, img_det, vid_cap, shapes) in enumerate(dataset):
         all_images += 1
+
+        if detection_mode == "carla_perfect":
+            # Assuming path is the path to the original image without suffix
+            if path.endswith("_RGBCamera.png"):
+                continue
+        else:
+            if path.endswith("_SemanticCamera.png"):
+                continue
 
         save_path_bad = str(save_path_bad_dir + '/' + Path(path).name)
         save_path_good = str(save_path_good_dir + '/' + Path(path).name)

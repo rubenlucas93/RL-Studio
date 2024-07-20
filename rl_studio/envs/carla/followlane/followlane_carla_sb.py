@@ -231,7 +231,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.perfect_distance_pixels = None
         self.perfect_distance_normalized = None
         # TODO Actions just 2 now for experiment with sac
-        self.action_space = spaces.Box(low=np.array([0.0, 0.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([0.0, -0.5]), high=np.array([1.0, 0.5]), dtype=np.float32)
         self.observation_space = spaces.Box(low=0, high=50, shape=(7,), dtype=np.float32)
 
     def setup_car_fix_pose(self, init):

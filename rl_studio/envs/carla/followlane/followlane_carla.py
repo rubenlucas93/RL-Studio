@@ -1119,6 +1119,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.car,
             {},
             display_pos=[0, 0],
+            save_on_disk=False
         )
 
         self.birds_eye_camera = SensorManager(
@@ -1129,6 +1130,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.car,
             {},
             display_pos=[1, 0],
+            save_on_disk=False
         )
 
         self.front_camera_1_5_segmentated = SensorManager(
@@ -1139,6 +1141,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.car,
             {},
             display_pos=[0, 1],
+            save_on_disk=False
         )
 
         # self.front_camera_1_5_red_mask = SensorManager(
