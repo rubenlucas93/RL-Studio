@@ -1,6 +1,7 @@
 import os
+import pickle
 import weakref
-from collections import Counter
+from collections import Counter, defaultdict
 import math
 import time
 import carla
@@ -124,6 +125,12 @@ def wasDetected(center_lanes):
 
 
 def getTransformFromPoints(points):
+    # print(f"OJO!! {points[0]}")
+    # print(f"{points[1]}")
+    # print(f"{points[2]}")
+    # print(f"{points[3]}")
+    # print(f"{points[4]}")
+    # print(f"{points[5]}")
     return carla.Transform(
             carla.Location(
                 x=points[0],
@@ -138,12 +145,76 @@ def getTransformFromPoints(points):
         )
 
 
+from collections import defaultdict
+import numpy as np
+
+class EntropyCalculator:
+    STATE_BINS = 10  # Number of bins per dimension
+    ACTION_BINS = 10  # Define the number of action bins
+    NUM_STATE_DIMENSIONS = 7  # Number of dimensions in the state
+
+    def __init__(self):
+        # Use a defaultdict of defaultdicts to count actions per discretized state
+        self.state_action_counts = defaultdict(lambda: defaultdict(int))
+
+    def calculate_entropy(self, state, action):
+        # Discretize the state and action
+        discretized_state = self.discretize_state(state)
+        discretized_action = self.discretize_action(action)
+
+        # Update the entropy experience buffer
+        self.add(discretized_state, discretized_action)
+
+        # Calculate action probabilities for the discretized state
+        action_probs = self.get_action_probs(discretized_state)
+
+        # Add a small epsilon to prevent log(0)
+        action_probs = action_probs + 1e-10
+        return -np.sum(action_probs * np.log(action_probs))
+
+    def add(self, state, action):
+        # Increment the count of the action taken in the given state
+        # Ensure that the state is hashable (as a tuple)
+        self.state_action_counts[tuple(state)][tuple(action)] += 1
+
+    def get_action_probs(self, state):
+        # Total count of actions taken in this state
+        total = sum(self.state_action_counts[state].values())
+        if total == 0:
+            return np.zeros(self.ACTION_BINS)  # No actions recorded for this state
+        return np.array([self.state_action_counts[state][action] / total for action in range(self.ACTION_BINS)])
+
+    def discretize_state(self, state):
+        # Create bins for each dimension and discretize each value
+        discretized_state = []
+        for dim in range(self.NUM_STATE_DIMENSIONS):
+            # Example range for each dimension, adjust according to your state space
+            bins = np.linspace(-1, 1, self.STATE_BINS)
+            discretized_state.append(np.digitize(state[dim], bins))
+        # Convert to a tuple to make it hashable
+        return tuple(discretized_state)
+
+    def discretize_action(self, action):
+        # Discretize the action similarly
+        return np.digitize(action, np.linspace(-1, 1, self.ACTION_BINS))
+
+
 class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def __init__(self, **config):
 
+        self.episode_d_reward = 0
+        self.episode_v_eff_reward = 0
+        self.location_actions = {}
+        self.location_rewards = {}
+        self.location_next_states = {}
+        self.location_stats = []
         self.show_images = False
         self.show_all_points = False
         self.debug_waypoints = config.get("debug_waypoints")
+        self.estimated_steps = config.get("estimated_steps")
+
+        self.entropy_factor = config.get("entropy_factor")
+        self.entropy_calculator = EntropyCalculator()
 
         self.failures = 0
         self.tensorboard = config.get("tensorboard")
@@ -190,7 +261,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # self.vehicle = None
         # self.actor_list = []
         self.timer = CustomTimer()
-        self.step_count = 0
+        self.step_count = 1
+        self.episode = 0
         self.all_steps = 0
         self.cumulated_reward = 0
         self.client = carla.Client(
@@ -263,6 +335,19 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         time.sleep(1)
 
     def reset(self, seed=None, options=None):
+        self.episode += 1
+        self.location_stats_episode = {
+            "actions": self.location_actions,
+            "rewards": self.location_rewards,
+            "next_states": self.location_next_states
+        }
+        self.location_stats.append(self.location_stats_episode)
+        self.location_actions = {}
+        self.location_rewards = {}
+        self.location_next_states = {}
+
+        if self.episode % 20 == 0:
+            self.tensorboard.save_location_stats(self.location_stats)
 
         if len(self.actor_list) > 0:
             self.destroy_all_actors()
@@ -325,6 +410,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.tensorboard.update_stats(
             steps_episode=self.step_count,
             cum_rewards=self.cumulated_reward,
+            d_reward=self.episode_d_reward,
+            v_reward=self.episode_v_eff_reward,
             avg_speed=avg_speed,
             max_speed=max_speed,
             # cum_d_reward=cum_d_reward,
@@ -347,7 +434,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # self.bad_perceptions = 0
         # self.crash = 0
         self.cumulated_reward = 0
-        self.step_count = 0
+        self.step_count = 1
 
     ####################################################
     ####################################################
@@ -491,9 +578,9 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
     def setup_car_random_pose(self):
         car_bp = self.world.get_blueprint_library().filter("vehicle.*")[0]
         if self.spawn_points is not None:
-            spawn_point_index = random.randint(0, len(self.spawn_points)-1)
+            spawn_point_index = random.randint(0, len(self.spawn_points))
             spawn_point = self.spawn_points[spawn_point_index]
-            if random.random() > 0.5:
+            if random.random() < 1: # TODO make it configurable
                 location = getTransformFromPoints(spawn_point)
             else:
                 location = random.choice(self.world.get_map().get_spawn_points())
@@ -598,7 +685,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
                 life_time=10000000,
                 persistent_lines=True,
             )
-            if self.step_count % 100 == 0:
+            if self.step_count % 100 == 1:
                 print(self.car.get_transform())
 
         # self.show_ll_seg_image(center_lanes, ll_segment_post_process, name="ll_seg_all")
@@ -618,25 +705,39 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # right_lane_normalized goes between 1 and -1
         distance_error = [abs(x) for x in right_lane_normalized_distances]
         ## -------- Rewards
-        reward, done, crash = self.rewards_easy(distance_error, params)
+        reward, done, crash = self.rewards_easy(distance_error, action, params)
         self.step_count += 1
 
         params["bad_perception"], _ = self.has_bad_perception(right_lane_normalized_distances, threshold=0.999)
         params["crash"] = crash
 
-        right_lane_normalized_distances.append(params["velocity"]/5)
-        right_lane_normalized_distances.append(params["steering_angle"])
-
-        if done:
-            if self.failures < 3:
+        if params["bad_perception"] and not params["crash"]:
+            if self.failures < 5:
                 self.failures += 1
-                done = False
+                return self.step(action)
             else:
                 self.failures = 0
+
+        right_lane_normalized_distances.append(params["velocity"])
+        right_lane_normalized_distances.append(params["steering_angle"])
 
         self.display_manager.render()
 
         self.cumulated_reward = self.cumulated_reward + reward
+
+        if self.episode % 10 == 0:
+            location = (
+                self.car.get_transform().location.x,
+                self.car.get_transform().location.y,
+                self.car.get_transform().location.z
+            )
+            # TODO here we could add also a "different with different state" so we can debug
+            # TODO here we could also store the rotation to better know if actions were right
+            # locations in which we suspect the perception is causing the problem
+            self.location_next_states[location] = right_lane_normalized_distances
+            self.location_actions[location] = action
+            self.location_rewards[location] = reward
+
         return np.array(right_lane_normalized_distances), reward, done, done, params
 
     def control(self, action):
@@ -645,8 +746,6 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         #     self.car.apply_control(carla.VehicleControl(throttle=float(action[0]), steer=float(action[1])))
         # else:
         #     self.car.apply_control(carla.VehicleControl(throttle=0.0, brake=float(abs(action[0])), steer=float(action[1])))
-
-        v = self.car.get_velocity()
 
         brake = 0.0
 
@@ -683,7 +782,13 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
 
         return function_reward
 
-    def rewards_easy(self, distance_error, params):
+    def scale_velocity(self, velocity, v_max=30):
+        # Logarithmic scaling formula
+        return math.log(1 + velocity) / math.log(1 + v_max)
+
+    def rewards_easy(self, distance_error, action, params):
+
+        ## EARLY RETURNS
         done = self.end_if_conditions(distance_error, threshold=self.reset_threshold,
                                                        min_conf_states=len(distance_error)//2)
         params["d_reward"] = 0
@@ -692,48 +797,77 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params["reward"] = 0
         if done:
             crash = True
-            return -2, done, crash
+            return 0, done, crash
 
         crash = False
+
+        #done, states_above_threshold = self.has_bad_perception(distance_error, 0.95, len(distance_error)//2)
+        #if done:
+        #    return 0, done, crash
+
         done, states_above_threshold = self.has_bad_perception(distance_error, self.reset_threshold, len(distance_error)//2)
 
         if done:
             return 0, done, crash
 
+        # REWARD CALCULATION
+        low_vel_factor=1
         if params["velocity"] < self.punish_ineffective_vel:
             self.steps_stopped += 1
             if self.steps_stopped > 100:
                 done = True
-            return 0, done, crash
-
+            low_vel_factor=0
         self.steps_stopped = 0
+
+        # DISTANCE REWARD CALCULCATION
         d_rewards = []
         for _, error in enumerate(distance_error):
-            # d_rewards.append(1 - error)
-            d_rewards.append(math.pow(max(0.8 - error, 0)/0.8, 3))
+            #d_rewards.append(1 - error)
+            d_rewards.append(math.pow(max(1 - error, 0), 5))
 
         # TODO ignore non detected centers
         d_reward = sum(d_rewards) / len(d_rewards)
         # d_reward = math.pow(d_reward, 9)
-        params["d_reward"] = d_reward
+        self.episode_d_reward = self.episode_d_reward + (d_reward - self.episode_d_reward) / self.step_count
 
-        # reward Max = 1 here
-        punish = 0
-        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
+        # VELOCITY REWARD CALCULCATION
 
+        #v_reward = self.scale_velocity(params["velocity"])
         v_reward = params["velocity"]/20
+        #v_factor = d_reward if d_reward > 0.6 else 0
+        #v_eff_reward = v_reward
+        #v_eff_reward = v_reward * v_factor
         v_eff_reward = v_reward * d_reward
-        params["v_reward"] = v_reward
+        # params["v_reward"] = v_reward
+        self.episode_v_eff_reward = self.episode_v_eff_reward + (v_eff_reward - self.episode_v_eff_reward) / self.step_count
         params["v_eff_reward"] = v_eff_reward
 
-        beta = self.beta
+        # TOTAL REWARD CALCULATION
         # TODO Ver que valores toma la velocity para compensarlo mejor
-        function_reward = beta * d_reward + (1-beta) * v_eff_reward
+        function_reward = self.beta * d_reward + (1-self.beta) * v_eff_reward
+        # function_reward = low_vel_factor * self.beta * d_reward + (1-self.beta) * v_eff_reward
+        #function_reward = d_reward * v_reward
+        params["reward"] = function_reward
+
+        if self.step_count > self.estimated_steps:
+            done = True
+
+        # PUNISH CALCULATION
+        punish = 0
+        punish += self.punish_zig_zag_value * abs(params["steering_angle"])
+        punish += (1-self.beta) * v_reward * math.pow((1-d_reward), 2)
         if function_reward > punish: # to avoid negative rewards
             function_reward -= punish
         else:
             function_reward = 0
-        params["reward"] = function_reward
+
+        # ENTROPY CALCULATION
+        if self.entropy_factor > 0:
+            state = distance_error.copy()
+            state.append(params["velocity"])
+            state.append(params["steering_angle"])
+            entropy = self.entropy_calculator.calculate_entropy(state, action)
+            function_reward += self.entropy_factor * entropy
 
         return function_reward, done, crash
 

@@ -10,7 +10,7 @@ settings:
   states: sp5 #image, sp1 (simplified perception with 1 point), sp3 (simplified perception with 3 points), spn (simplified perception with n points)
   rewards: followlane_center # followline_center, followline_center_v_w_linear
   framework: baselines # TensorFlow, Pytorch
-  total_episodes: 500000
+  total_episodes: 5000000
   training_time: 72
   models_dir: "./checkpoints"
   recorder_carla_dir: "./recorders"
@@ -18,14 +18,15 @@ settings:
   metrics_dir: "./metrics"
   debug_stats: false
   show_monitoring: false
-  steps_to_decrease: 40000
-  decrease_substraction: 0.01
-  decrease_min: 0.005
+  steps_to_decrease: 10000
+  decrease_substraction: 0.003
+  decrease_min: 0.003
+  entropy_factor: 0
   reward_params:
     function: pow
-    punish_zig_zag_value: 0.5
-    punish_ineffective_vel: 2
-    beta_1: 0.7
+    punish_zig_zag_value: 1
+    punish_ineffective_vel: 1
+    beta_1: 0.1 #ojooo sube estooo
 
 ros:
   ros_master_uri: "11311"
@@ -33,16 +34,16 @@ ros:
 
 retraining:
   ddpg:
-    retrain_ddpg_tf_model_name: /home/ruben/Desktop/RL-Studio/rl_studio/checkpoints/follow_lane_carla_ddpg_auto_carla_baselines/20240717-184710/model_2090000_steps.zip
+    retrain_ddpg_tf_model_name: /home/ruben/Desktop/RL-Studio/rl_studio/checkpoints/follow_lane_carla_ddpg_auto_carla_baselines/20240924-163154/model_40000_steps.zip
 inference:
   ddpg:
-    retrain_ddpg_tf_model_name:
+    retrain_ddpg_tf_model_name: /whatever
 
 algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.07
+    std_dev: 0.05
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
@@ -97,7 +98,7 @@ carla_environments:
     traffic_pedestrians: False
     city_lights: False
     car_lights: False
-    estimated_steps: 20000
+    estimated_steps: 5000
     save_episodes: 5 # not used in this carla ppo
     save_every_step: 100 # not used in this carla ppo
     goal_pose:
@@ -110,15 +111,15 @@ carla_environments:
     detection_mode: lane_detector_v2
     fixed_delta_seconds: 0.1
     async_forced_delta_seconds: 0
-    reset_threshold: 0.25
+    reset_threshold: 0.35
     alternate_pose: True
     spawn_points: [
       [ -475.906342, 352.208710, 1.007515, 0.051254, 55.662395, 0.072115 ],
       [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 20.1006703],
       [384.381470, -47.060329, 1.007339, 0.031453, 90.310402, 0.008101],
-      [195.221252, -367.893829, 1.009260, 0.248796, 0.152361, -0.002625],
+      [199.221252, -367.893829, 0.809260, 0.248796, 0.152361, -0.002625],
       [235.603699, 12.395636, 5.228042, 3.577455, 0.124573, -0.008118],
-      [385.585938, -176.352158, 1.007793, 0.082516, 270.889893, 0.078263]
+      [389.585938, -176.352158, 0.807793, 0.082516, 270.889893, 0.078263]
     ]
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6912 # {6912} 1471 6927 899 6294    waypoints_target: 959 #961
@@ -128,5 +129,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 2000
+  carla_client: 4001
   manager_port: 8022

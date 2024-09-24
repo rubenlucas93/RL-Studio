@@ -114,7 +114,8 @@ class InferencerFollowLaneDDPGF1GazeboTF:
                 # action = ac_agent.policy(
                 #    tf_prev_state, ou_noise, self.global_params.actions
                 # )
-                actions = model.predict(tf_prev_state)
+                actions = (
+                    model.predict(tf_prev_state))
                 action = [[actions[0][0][0], actions[1][0][0]]]
                 state, reward, done, _ = env.step(action, step)
                 cumulated_reward += reward

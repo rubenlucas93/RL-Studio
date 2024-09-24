@@ -25,6 +25,7 @@ for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 if gpus:
     tf.config.set_visible_devices(gpus[0], 'GPU')
+import pickle
 
 
 def build_markdown_table(data_dict):
@@ -53,6 +54,10 @@ class ModifiedTensorBoard(TensorBoard):
         self.fps_step = 1
         self.writer = tf.summary.create_file_writer(self.log_dir)
         self.txWriter = SummaryWriter(self.log_dir)
+
+    def save_location_stats(self, stats):
+        with open(f"{self.log_dir}/loc_stats.pkl", "wb") as f:
+            pickle.dump(stats, f)
 
     # Overriding this method to stop creating default log writer
     def set_model(self, model):

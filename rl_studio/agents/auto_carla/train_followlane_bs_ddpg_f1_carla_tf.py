@@ -6,8 +6,10 @@ import pynvml
 import psutil
 
 from stable_baselines3.common.noise import NormalActionNoise
-from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.policies import BasePolicy
 
+from gym import spaces
+from typing import Callable, Tuple
 
 import torch as th
 import torch.nn as nn
@@ -60,7 +62,6 @@ from stable_baselines3 import DDPG
 # from stable_baselines3 import DDPG
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.logger import configure
-
 
 try:
     sys.path.append(
@@ -117,20 +118,6 @@ def combine_attributes(obj1, obj2, obj3):
     return combined_dict
 
 
-class CustomPolicyNetwork(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=128):
-        super(CustomPolicyNetwork, self).__init__(observation_space, features_dim)
-        self.net = nn.Sequential(
-            nn.Linear(observation_space.shape[0], 128),
-            nn.ReLU(),
-            nn.Linear(128, 256),
-            nn.ReLU(),
-            nn.Linear(256, features_dim)
-        )
-
-    def forward(self, observations):
-        return self.net(observations)
-
 class PeriodicSaveCallback(BaseCallback):
     def __init__(self, save_path, save_freq=10000, verbose=1):
         super(PeriodicSaveCallback, self).__init__(verbose)
@@ -164,7 +151,7 @@ class ExplorationRateCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         self.current_step += 1
-        if self.current_step % self.decay_steps == 0:
+        if self.current_step % self.decay_steps == 1:
             self.exploration_rate = max(self.exploration_min, self.exploration_rate - self.decay_rate)
             # Assuming self.model is a DDPG model
             self.model.action_noise = NormalActionNoise(
@@ -176,57 +163,123 @@ class ExplorationRateCallback(BaseCallback):
             self.tensorboard.update_stats(std_dev=self.exploration_rate)
         return True
 
-class CustomActorCriticPolicy(ActorCriticPolicy):
-    def __init__(self, observation_space: gym.spaces.Space, action_space: gym.spaces.Space, lr_schedule, *args, **kwargs):
-        # Filter out unexpected kwargs
+
+class CustomActor(nn.Module):
+    """
+    Custom actor network for policy function.
+    :param feature_dim: dimension of the features extracted with the features_extractor
+    """
+
+    def __init__(self, feature_dim: int, last_layer_dim_pi: int = 64):
+        super(CustomActor, self).__init__()
+
+        # Policy network
+        self.policy_net = nn.Sequential(
+            nn.Linear(feature_dim, last_layer_dim_pi),
+            nn.ReLU(),
+            nn.Linear(last_layer_dim_pi, 32),
+            nn.ReLU(),
+        )
+        # Separate heads for velocity and steering
+        self.velocity_head = nn.Sequential(
+            nn.Linear(32, 1),
+            nn.Sigmoid()  # Output range [0, 1]
+        )
+        self.steering_head = nn.Sequential(
+            nn.Linear(32, 1),
+            nn.Tanh()  # Output range [-1, 1], will be scaled to [-0.5, 0.5]
+        )
+        self.optimizer = th.optim.Adam(self.parameters())
+
+    def forward(self, features: th.Tensor) -> th.Tensor:
+        features = th.tensor(features, dtype=th.float32).to("cuda")
+        policy_latent = self.policy_net(features)
+        velocity = self.velocity_head(policy_latent)
+        steering = self.steering_head(policy_latent) * 0.5  # Scale to [-0.5, 0.5]
+        return th.cat((velocity, steering), dim=-1)
+
+
+class CustomCritic(nn.Module):
+    """
+    Custom critic network for value function.
+    :param feature_dim: dimension of the features extracted with the features_extractor
+    """
+
+    def __init__(self, feature_dim: int, last_layer_dim_vf: int = 64):
+        super(CustomCritic, self).__init__()
+
+        # Value network
+        self.value_net = nn.Sequential(
+            nn.Linear(feature_dim, last_layer_dim_vf),
+            nn.ReLU(),
+            nn.Linear(last_layer_dim_vf, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+        self.optimizer = th.optim.Adam(self.parameters())
+
+    def forward(self, features: th.Tensor) -> th.Tensor:
+        return self.value_net(features)
+
+
+class CustomDDPGPolicy(BasePolicy):
+    def __init__(
+            self,
+            observation_space: spaces.Space,
+            action_space: spaces.Space,
+            lr_schedule: Callable[[float], float],
+            *args,
+            **kwargs,
+    ):
         kwargs.pop('n_critics', None)
-        super(CustomActorCriticPolicy, self).__init__(observation_space, action_space, lr_schedule, *args, **kwargs)
+        super(CustomDDPGPolicy, self).__init__(
+            observation_space,
+            action_space,
+            *args,
+            **kwargs,
+        )
+
+        # Feature extraction dimensions
         self.features_dim = observation_space.shape[0]
 
-        self.actor_net_1 = nn.Sequential(
-            nn.Linear(self.features_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
-        self.actor_net_2 = nn.Sequential(
-            nn.Linear(self.features_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
+        # Actor network
+        self.actor = CustomActor(self.features_dim)
+        self.actor_target = CustomActor(self.features_dim)
+        # Critic network
+        self.critic = CustomCritic(self.features_dim)
+        self.critic_target = CustomCritic(self.features_dim)
+
+        # Action noise for exploration
+        self.action_noise = NormalActionNoise(
+            mean=th.zeros(action_space.shape), sigma=0.1 * th.ones(action_space.shape)
         )
 
-        self.critic_net = nn.Sequential(
-            nn.Linear(self.features_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-        )
+        # Initialize optimizers
+        self.actor_optimizer = th.optim.Adam(self.actor.parameters(), lr=lr_schedule(1))
+        self.critic_optimizer = th.optim.Adam(self.critic.parameters(), lr=lr_schedule(1))
 
-    def _predict(self, observations, deterministic=False):
-        features = self.extract_features(observations)
-        action1 = self.actor_net_1(features)
-        action2 = self.actor_net_2(features) - 0.5
-        return th.cat((action1, action2), dim=-1)
+    def forward(self, obs: th.Tensor) -> th.Tensor:
+        return self.actor(obs)
 
-    def forward(self, observations, deterministic=False):
-        return self._predict(observations, deterministic)
+    def critic_value(self, obs: th.Tensor, actions: th.Tensor) -> th.Tensor:
+        return self.critic(th.cat([obs, actions], dim=1))
 
-    def _get_constructor_parameters(self):
-        data = super()._get_constructor_parameters()
-        data.update(dict(
-            features_dim=self.features_dim
-        ))
-        return data
+    def _predict(self, observation: th.Tensor, deterministic: bool = True) -> th.Tensor:
+        """
+        Predict actions for the given observation.
+        :param observation: (th.Tensor) Observations from the environment.
+        :param deterministic: (bool) Whether to use deterministic or stochastic actions.
+        :return: (th.Tensor) Predicted actions.
+        """
+        actions = self.forward(observation).detach()
+        if deterministic:
+            return actions, None
+        else:
+            # Apply noise for exploration in non-deterministic settings
+            return actions.cpu().numpy() + self.action_noise(), None
 
-    def extract_features(self, observations):
-        # Implement feature extraction if needed
-        return observations
+    def predict(self, observation: th.Tensor, state, start, deterministic: bool = True) -> th.Tensor:
+        return self._predict(observation, deterministic)
 
 class TrainerFollowLaneDDPGCarla:
     """
@@ -249,6 +302,7 @@ class TrainerFollowLaneDDPGCarla:
         self.global_params = LoadGlobalParams(config)
         self.environment = LoadEnvVariablesDDPGCarla(config)
         self.environment.environment["debug_waypoints"] = False
+        self.environment.environment["estimated_steps"] = 5000
         logs_dir = f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
         self.tensorboard = ModifiedTensorBoard(
             log_dir=logs_dir
@@ -268,6 +322,7 @@ class TrainerFollowLaneDDPGCarla:
         ## Load Carla server
         # CarlaEnv.__init__(self)
 
+        self.environment.environment["entropy_factor"] = config["settings"]["entropy_factor"]
         self.env = gym.make(self.env_params.env_name, **self.environment.environment)
         self.all_steps = 0
         self.current_max_reward = 0
@@ -291,20 +346,12 @@ class TrainerFollowLaneDDPGCarla:
 
         self.exploration = self.algoritmhs_params.std_dev if self.global_params.mode != "inference" else 0
 
-        # TODO This must come from config states in yaml
-        state_size = len(self.environment.environment["x_row"]) + 2
-        self.ou_noise = OUActionNoise(
-            mean=np.zeros(1),
-            std_deviation=float(self.exploration) * np.ones(1),
-        )
-        type(self.env.action_space)
-
         self.params = {
-            "policy": "MlpPolicy",
-            "learning_rate": 0.0003,
-            "buffer_size": 1000000,
+            "policy": "CustomPolicy",
+            "learning_rate": 0.00035,
+            "buffer_size": 100000,
             "batch_size": 256,
-            "gamma": 0.95,
+            "gamma": 0.90,
             "tau": 0.005,
             "total_timesteps": 5000000
         }
@@ -322,9 +369,10 @@ class TrainerFollowLaneDDPGCarla:
         else:
             # Assuming `self.params` and `self.global_params` are defined properly
             self.ddpg_agent = DDPG(
-                # CustomActorCriticPolicy,
+                # CustomDDPGPolicy,
                 "MlpPolicy",
                 self.env,
+                policy_kwargs=dict(net_arch=dict(pi=[64, 64,64, 64], qf=[64, 64, 64, 64])),
                 learning_rate=self.params["learning_rate"],
                 buffer_size=self.params["buffer_size"],
                 batch_size=self.params["batch_size"],
@@ -334,7 +382,7 @@ class TrainerFollowLaneDDPGCarla:
                 # tensorboard_log=f"{self.global_params.logs_tensorboard_dir}/{self.algoritmhs_params.model_name}-{time.strftime('%Y%m%d-%H%M%S')}"
             )
 
-
+        print(self.ddpg_agent.actor)
         # Set the action noise on the loaded model
         self.ddpg_agent.action_noise = action_noise
 
@@ -351,9 +399,13 @@ class TrainerFollowLaneDDPGCarla:
             config=self.params,
             sync_tensorboard=True,
         )
-        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,  initial_exploration_rate=0.1, decay_rate=0.005,
-                                                    decay_steps=20000,  exploration_min=0.005, verbose=1)
-        wandb_callback = WandbCallback(gradient_save_freq=100, verbose=2)
+        exploration_rate_callback = ExplorationRateCallback(self.tensorboard,
+                                                            initial_exploration_rate=self.exploration,
+                                                            decay_rate= self.global_params.decrease_substraction,
+                                                            decay_steps=self.global_params.steps_to_decrease,
+                                                            exploration_min=self.global_params.decrease_min,
+                                                            verbose=1)
+        # wandb_callback = WandbCallback(gradient_save_freq=100, verbose=2)
         eval_callback = EvalCallback(
             self.env,
             best_model_save_path=f"{self.global_params.models_dir}/{time.strftime('%Y%m%d-%H%M%S')}",
@@ -366,7 +418,7 @@ class TrainerFollowLaneDDPGCarla:
             verbose=1
         )
 
-        callback_list = CallbackList([exploration_rate_callback, wandb_callback, eval_callback, periodic_save_callback])
+        callback_list = CallbackList([exploration_rate_callback, eval_callback, periodic_save_callback])
 
         self.ddpg_agent.learn(total_timesteps=self.params["total_timesteps"],
                               callback=callback_list)
