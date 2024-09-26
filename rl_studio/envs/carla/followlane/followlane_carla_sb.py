@@ -251,7 +251,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.yolop_model.load_state_dict(checkpoint['state_dict'])
             self.yolop_model = self.yolop_model.to(self.device)
         elif self.detection_mode == "lane_detector_v2":
-            self.lane_model = torch.load('envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth', map_location=self.device)
+            self.lane_model = torch.load('/home/ruben/Desktop/RL-Studio/rl_studio/envs/carla/utils/lane_det/fastai_torch_lane_detector_model.pth', map_location=self.device)
             self.lane_model.eval()
         elif self.detection_mode == "lane_detector":
             self.lane_model = torch.load(
@@ -346,8 +346,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         self.location_rewards = {}
         self.location_next_states = {}
 
-        if self.episode % 20 == 0:
-            self.tensorboard.save_location_stats(self.location_stats)
+       # if self.episode % 20 == 0:
+       #     self.tensorboard.save_location_stats(self.location_stats)
 
         if len(self.actor_list) > 0:
             self.destroy_all_actors()
@@ -392,7 +392,11 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         right_lane_normalized_distances.append(0)
         right_lane_normalized_distances.append(0)
 
-        self.calculate_and_report_episode_stats()
+        if self.tensorboard is not None:
+            self.calculate_and_report_episode_stats()
+
+        self.cumulated_reward = 0
+        self.step_count = 1
 
         return np.array(right_lane_normalized_distances), state_size
 
@@ -433,8 +437,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         # self.step_fps = []
         # self.bad_perceptions = 0
         # self.crash = 0
-        self.cumulated_reward = 0
-        self.step_count = 1
+
 
     ####################################################
     ####################################################
@@ -580,7 +583,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         if self.spawn_points is not None:
             spawn_point_index = random.randint(0, len(self.spawn_points))
             spawn_point = self.spawn_points[spawn_point_index]
-            if random.random() < 1: # TODO make it configurable
+            if random.random() <= 1: # TODO make it configurable
                 location = getTransformFromPoints(spawn_point)
             else:
                 location = random.choice(self.world.get_map().get_spawn_points())
@@ -629,7 +632,8 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params = self.control(action)
         self.episodes_speed.append(params["velocity"])
 
-        self.tensorboard.update_actions(action, self.all_steps)
+        if self.tensorboard is not None:
+            self.tensorboard.update_actions(action, self.all_steps)
 
         now = time.time()
         elapsed_time = now - self.previous_time
@@ -711,12 +715,12 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params["bad_perception"], _ = self.has_bad_perception(right_lane_normalized_distances, threshold=0.999)
         params["crash"] = crash
 
-        if params["bad_perception"] and not params["crash"]:
-            if self.failures < 5:
-                self.failures += 1
-                return self.step(action)
-            else:
-                self.failures = 0
+      #  if params["bad_perception"] and not params["crash"]:
+      #       if self.failures < 5:
+      #           self.failures += 1
+      #           return self.step(action)
+      #       else:
+      #           self.failures = 0
 
         right_lane_normalized_distances.append(params["velocity"])
         right_lane_normalized_distances.append(params["steering_angle"])
@@ -796,14 +800,16 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params["v_eff_reward"] = 0
         params["reward"] = 0
         if done:
+            print("car deviated")
             crash = True
             return 0, done, crash
 
         crash = False
 
-        #done, states_above_threshold = self.has_bad_perception(distance_error, 0.95, len(distance_error)//2)
-        #if done:
-        #    return 0, done, crash
+        done, states_above_threshold = self.has_bad_perception(distance_error, 0.95, len(distance_error)//2)
+        if done:
+            print("line missed")
+            return self.episode_d_reward, done, crash
 
         done, states_above_threshold = self.has_bad_perception(distance_error, self.reset_threshold, len(distance_error)//2)
 
@@ -816,6 +822,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
             self.steps_stopped += 1
             if self.steps_stopped > 100:
                 done = True
+                print("too much time stopped")
             low_vel_factor=0
         self.steps_stopped = 0
 
@@ -850,6 +857,7 @@ class FollowLaneStaticWeatherNoTraffic(FollowLaneEnv):
         params["reward"] = function_reward
 
         if self.step_count > self.estimated_steps:
+            print("episode finished")
             done = True
 
         # PUNISH CALCULATION

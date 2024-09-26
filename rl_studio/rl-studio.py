@@ -13,7 +13,7 @@ def main():
         type=argparse.FileType("r"),
         required=True,
         default="config/config.yaml",
-        help="In /config dir you wissssll find .yaml examples files",
+        help="In /config dir you will find .yaml examples files",
     )
 
     args = parser.parse_args()

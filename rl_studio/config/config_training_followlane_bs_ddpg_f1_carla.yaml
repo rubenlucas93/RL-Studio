@@ -18,10 +18,10 @@ settings:
   metrics_dir: "./metrics"
   debug_stats: false
   show_monitoring: false
-  steps_to_decrease: 10000
-  decrease_substraction: 0.003
+  steps_to_decrease: 1000
+  decrease_substraction: 0.04
   decrease_min: 0.003
-  entropy_factor: 0
+  entropy_factor: 0.05
   reward_params:
     function: pow
     punish_zig_zag_value: 1
@@ -43,7 +43,7 @@ algorithm:
   ddpg:
     gamma: 0.9
     tau: 0.005
-    std_dev: 0.05
+    std_dev: 0.04
     model_name: DDPG_Actor_conv2d32x64_Critic_conv2d32x64
     replay_memory_size: 10_000
     memory_fraction: 0.20
@@ -114,12 +114,12 @@ carla_environments:
     reset_threshold: 0.35
     alternate_pose: True
     spawn_points: [
-      [ -475.906342, 352.208710, 1.007515, 0.051254, 55.662395, 0.072115 ],
-      [12.593741, 156.040146, 1.008111, 0.118347, -90.375160, 20.1006703],
-      [384.381470, -47.060329, 1.007339, 0.031453, 90.310402, 0.008101],
+      [ -475.506342, 352.208710, 0.807793, 0.051254, 55.662395, 0.072115 ],
+      [12.493741, 157.040146, 0.809260, 0.051254, -90.375160, 0.1006703],
+      [384.381470, -46.060329, 0.607339, 0.031453, 90.310402, 0.008101],
       [199.221252, -367.893829, 0.809260, 0.248796, 0.152361, -0.002625],
       [235.603699, 12.395636, 5.228042, 3.577455, 0.124573, -0.008118],
-      [389.585938, -176.352158, 0.807793, 0.082516, 270.889893, 0.078263]
+      [389.385938, -179.152158, 0.457793, 0.082516, 270.889893, 0.078263]
     ]
     waypoints_meters: 5 #distance between waypoints in meters
     waypoints_init: 6912 # {6912} 1471 6927 899 6294    waypoints_target: 959 #961
@@ -129,5 +129,5 @@ carla_environments:
 
 carla:
   carla_server: localhost
-  carla_client: 4001
+  carla_client: 4002
   manager_port: 8022
